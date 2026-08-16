@@ -27,6 +27,10 @@ def _get_specs(buy_conditions: dict, sell_conditions: dict, position_size_pct: f
                 lo, hi = (10.0, 49.0) if side == "buy" else (51.0, 90.0)
                 specs.append((f"{side}.{i}.value", float(value), lo, hi, float))
 
+            if value is not None and isinstance(value, (int, float)) and ind == "ML_SIGNAL":
+                lo, hi = (0.5, 0.95) if side == "buy" else (0.05, 0.5)
+                specs.append((f"{side}.{i}.value", float(value), lo, hi, float))
+
     specs.append(("pos", float(position_size_pct), 2.0, 50.0, float))
     return specs
 

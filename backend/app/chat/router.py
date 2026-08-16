@@ -45,6 +45,7 @@ Available indicators and their params:
 - ROC: {"period": 10} — rate of change percentage
 - PRICE: {} — current closing price (no params)
 - VOLUME: {} — trading volume (no params)
+- ML_SIGNAL: {} — trained classifier's predicted probability (0-1) price is up in 5 trading days; >0.65 is fairly confident bullish, <0.35 fairly confident bearish
 
 Rule format examples:
 - Fixed value: {"indicator": "RSI", "params": {"period": 14}, "operator": "<", "value": 30, "right_indicator": null, "right_params": null}

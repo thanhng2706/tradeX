@@ -11,13 +11,15 @@ interface Portfolio {
   created_at: string
 }
 
-const LIBRARY_CATEGORIES = ['All', 'Long Term', 'ETFs', 'Active Trading', 'Leveraged']
+const LIBRARY_CATEGORIES = ['All', 'Long Term', 'ETFs', 'Active Trading', 'Leveraged', 'Stocks', 'Options']
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Long Term':      'bg-blue-900/40 text-blue-300 border-blue-800/60',
   'ETFs':           'bg-emerald-900/40 text-emerald-300 border-emerald-800/60',
   'Active Trading': 'bg-purple-900/40 text-purple-300 border-purple-800/60',
   'Leveraged':      'bg-orange-900/40 text-orange-300 border-orange-800/60',
+  'Stocks':         'bg-cyan-900/40 text-cyan-300 border-cyan-800/60',
+  'Options':        'bg-pink-900/40 text-pink-300 border-pink-800/60',
 }
 
 function conditionSummary(conditions: any): string {
@@ -303,27 +305,14 @@ export default function PortfoliosPage() {
     setTimeout(() => setToast(''), 3000)
   }
 
-  const totalCapital = portfolios.reduce((s, p) => s + p.starting_balance, 0)
   const filteredLibrary = activeCategory === 'All'
     ? libraryStrategies
     : libraryStrategies.filter((s) => s.category === activeCategory)
 
   return (
     <div className="max-w-7xl mx-auto px-8 py-10">
-      <div className="flex items-end justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Portfolios</h1>
-          <p className="text-gray-600 text-sm mt-0.5">
-            {portfolios.length} portfolio{portfolios.length !== 1 ? 's' : ''} · ${totalCapital.toLocaleString()} total capital
-          </p>
-        </div>
-        <button onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-          </svg>
-          New Portfolio
-        </button>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-white">Portfolios</h1>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

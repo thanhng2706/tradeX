@@ -43,6 +43,14 @@ def copy_to_portfolio(
         sell_conditions=template["sell_conditions"],
         position_size_pct=template["position_size_pct"],
         portfolio_id=portfolio_id,
+        asset_type=template.get("asset_type", "equity"),
+        option_type=template.get("option_type"),
+        strike_distance_pct=template.get("strike_distance_pct"),
+        dte_min=template.get("dte_min"),
+        dte_max=template.get("dte_max"),
+        take_profit_pct=template.get("take_profit_pct"),
+        stop_loss_pct=template.get("stop_loss_pct"),
+        max_days_held=template.get("max_days_held"),
     )
     db.add(strategy)
     db.commit()

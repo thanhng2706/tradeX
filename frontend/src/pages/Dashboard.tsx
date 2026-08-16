@@ -469,18 +469,9 @@ export default function Dashboard() {
         </div>
 
         {/* Portfolios section */}
-        <div className="flex items-end justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-bold text-white">Your Portfolios</h2>
-            <p className="text-gray-600 text-sm mt-0.5">Each portfolio is monitored in real time.</p>
-          </div>
-          <button onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-            </svg>
-            New Portfolio
-          </button>
+        <div className="mb-4">
+          <h2 className="text-xl font-bold text-white">Your Portfolios</h2>
+          <p className="text-gray-600 text-sm mt-0.5">Each portfolio is monitored in real time.</p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">

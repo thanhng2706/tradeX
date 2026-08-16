@@ -28,6 +28,7 @@ Supported indicators and their params:
 - ROC:         {"period": 10}
 - PRICE:       {}
 - VOLUME:      {}
+- ML_SIGNAL:   {} — trained model's predicted probability (0-1) price is up in 5 trading days
 
 Operators: "<", ">", "<=", ">=", "crosses_above", "crosses_below"
 

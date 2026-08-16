@@ -8,13 +8,15 @@ interface Portfolio {
   name: string
 }
 
-const CATEGORIES = ['All', 'Long Term', 'ETFs', 'Active Trading', 'Leveraged']
+const CATEGORIES = ['All', 'Long Term', 'ETFs', 'Active Trading', 'Leveraged', 'Stocks', 'Options']
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Long Term':     'bg-blue-900/40 text-blue-300 border-blue-800/60',
   'ETFs':          'bg-emerald-900/40 text-emerald-300 border-emerald-800/60',
   'Active Trading':'bg-purple-900/40 text-purple-300 border-purple-800/60',
   'Leveraged':     'bg-orange-900/40 text-orange-300 border-orange-800/60',
+  'Stocks':        'bg-cyan-900/40 text-cyan-300 border-cyan-800/60',
+  'Options':       'bg-pink-900/40 text-pink-300 border-pink-800/60',
 }
 
 function conditionSummary(conditions: any): string {
@@ -142,6 +144,13 @@ function StrategyCard({
       </div>
 
       <p className="text-gray-500 text-xs leading-relaxed">{strategy.description}</p>
+
+      {strategy.asset_type === 'option' && (
+        <p className="text-xs font-mono text-pink-300/80 bg-pink-950/20 border border-pink-900/40 rounded px-2 py-1">
+          {strategy.option_type?.toUpperCase()} · {strategy.strike_distance_pct! >= 0 ? '+' : ''}{strategy.strike_distance_pct}% strike ·{' '}
+          {strategy.dte_min}-{strategy.dte_max} DTE · TP {strategy.take_profit_pct}% / SL {strategy.stop_loss_pct}%
+        </p>
+      )}
 
       <div className="space-y-1">
         <p className="text-xs font-mono text-gray-700 truncate">

@@ -139,9 +139,6 @@ export default function StrategyList() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-2xl font-bold text-white truncate">{portfolio?.name ?? '...'}</h1>
-                <p className="text-gray-500 text-sm mt-0.5">
-                  ${portfolio?.starting_balance.toLocaleString()} starting capital
-                </p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -163,6 +160,17 @@ export default function StrategyList() {
           {/* Performance summary — real vs backtested, never blended */}
           {performance && strategies.length > 0 && (
             <div className="flex flex-wrap items-center gap-x-10 gap-y-4 mt-7 pt-6 border-t border-gray-800/60">
+              <div>
+                <p className="text-gray-500 text-xs font-semibold tracking-widest uppercase mb-1.5 flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4" /></svg>
+                  Starting Capital
+                </p>
+                <p className="text-3xl font-black text-white">${portfolio?.starting_balance.toLocaleString() ?? '—'}</p>
+                <p className="text-gray-600 text-xs mt-0.5">per-strategy simulated balance</p>
+              </div>
+
+              <div className="h-12 w-px bg-gray-800 hidden sm:block" />
+
               <div>
                 <p className="text-gray-500 text-xs font-semibold tracking-widest uppercase mb-1.5 flex items-center gap-1.5">
                   <svg className="w-3 h-3 text-emerald-500" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4" /></svg>
@@ -199,6 +207,22 @@ export default function StrategyList() {
                     <p className="text-gray-600 text-xs mt-0.5">No backtests yet</p>
                   </>
                 )}
+              </div>
+
+              <div className="h-12 w-px bg-gray-800 hidden sm:block" />
+
+              <div>
+                <p className="text-gray-500 text-xs font-semibold tracking-widest uppercase mb-1.5 flex items-center gap-1.5">
+                  <svg className="w-3 h-3 text-purple-500" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4" /></svg>
+                  Total Strategies
+                </p>
+                <p className="text-3xl font-black text-white">{strategies.length}</p>
+                <p className="text-gray-600 text-xs mt-0.5">
+                  {liveInPortfolio.length} live · {backtestInPortfolio.length} backtested
+                  {strategies.length - liveInPortfolio.length - backtestInPortfolio.length > 0
+                    ? ` · ${strategies.length - liveInPortfolio.length - backtestInPortfolio.length} untested`
+                    : ''}
+                </p>
               </div>
             </div>
           )}
@@ -245,6 +269,9 @@ export default function StrategyList() {
                     {s.ticker}
                   </span>
                   {s.asset_type === 'option' && <Badge tone="purple">OPTION</Badge>}
+                  <Badge tone={perf?.source === 'live' ? 'green' : perf?.source === 'backtest' ? 'blue' : 'neutral'}>
+                    {perf?.source === 'live' ? 'LIVE' : perf?.source === 'backtest' ? 'BACKTESTED' : 'UNTESTED'}
+                  </Badge>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
@@ -265,16 +292,18 @@ export default function StrategyList() {
                   >
                     Paper Trade
                   </button>
+                  <button
+                    onClick={() => navigate(`/portfolios/${id}/strategies/${s.id}/broker-deploy`)}
+                    className="text-xs bg-cyan-600 hover:bg-cyan-500 text-white px-2.5 py-1.5 rounded-lg transition-colors font-medium"
+                  >
+                    Deploy to Alpaca
+                  </button>
                   <DropdownMenu
                     items={[
-                      { label: 'Deploy to Alpaca', onClick: () => navigate(`/portfolios/${id}/strategies/${s.id}/broker-deploy`) },
                       { label: 'Edit', onClick: () => navigate(`/portfolios/${id}/strategies/${s.id}/edit`) },
                       { label: 'Delete', onClick: () => handleDelete(s.id), danger: true },
                     ]}
                   />
-                  <Badge tone={perf?.source === 'live' ? 'green' : perf?.source === 'backtest' ? 'blue' : 'neutral'}>
-                    {perf?.source === 'live' ? 'LIVE' : perf?.source === 'backtest' ? 'BACKTESTED' : 'UNTESTED'}
-                  </Badge>
                 </div>
               </div>
 

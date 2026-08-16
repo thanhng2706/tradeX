@@ -14,7 +14,9 @@ from app.research.router import router as research_router
 from app.broker.router import router as broker_router
 from app.broker.deploy_router import router as broker_deploy_router
 from app.broker.notifications_router import router as notifications_router
+from app.broker.live_router import router as broker_live_router
 from app.performance.router import router as performance_router
+from app.ml.router import router as ml_router
 from app.broker.scheduler import start_scheduler, stop_scheduler
 
 app = FastAPI(title="Tradex API")
@@ -41,7 +43,9 @@ app.include_router(research_router)
 app.include_router(broker_router)
 app.include_router(broker_deploy_router)
 app.include_router(notifications_router)
+app.include_router(broker_live_router)
 app.include_router(performance_router)
+app.include_router(ml_router)
 
 
 @app.on_event("startup")

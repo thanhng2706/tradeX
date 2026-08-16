@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { strategiesApi, Rule, ConditionSet, AssetType, OptionType } from '../api/strategies'
+import api from '../api/client'
 
 // ── Indicator metadata ────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ const INDICATOR_META: Record<string, IndicatorMeta> = {
   ATR:         { label: 'ATR',              category: 'Volatility',  params: [{ key: 'period',  label: 'Period', default: 14, min: 1 }] },
   PRICE:       { label: 'Price',            category: 'Price/Vol',   params: [] },
   VOLUME:      { label: 'Volume',           category: 'Price/Vol',   params: [] },
+  ML_SIGNAL:   { label: 'ML Signal (prob. up in 5d)', category: 'Machine Learning', params: [] },
 }
 
 const OPERATORS = [
@@ -104,6 +106,30 @@ function ParamsInput({
         </div>
       ))}
     </>
+  )
+}
+
+type MLInfo = { trained: boolean; accuracy?: number; roc_auc?: number; universe_size?: number; trained_at?: string }
+let mlInfoCache: MLInfo | null = null
+
+function MLInfoLine() {
+  const [info, setInfo] = useState<MLInfo | null>(mlInfoCache)
+
+  useEffect(() => {
+    if (mlInfoCache) return
+    api.get<MLInfo>('/ml/info').then((r) => {
+      mlInfoCache = r.data
+      setInfo(r.data)
+    }).catch(() => {})
+  }, [])
+
+  if (!info) return null
+  return (
+    <p className="text-xs text-gray-600 basis-full">
+      {info.trained
+        ? `Model held-out accuracy ${((info.accuracy ?? 0) * 100).toFixed(1)}% · AUC ${(info.roc_auc ?? 0).toFixed(2)} · trained on ${info.universe_size} tickers (${info.trained_at})`
+        : 'Model not trained yet — ML_SIGNAL will evaluate to NaN (rule never fires) until training runs.'}
+    </p>
   )
 }
 
@@ -198,6 +224,8 @@ function RuleRow({ rule, onChange, onDelete }: { rule: Rule; onChange: (r: Rule)
       >
         ✕
       </button>
+
+      {(rule.indicator === 'ML_SIGNAL' || rule.right_indicator === 'ML_SIGNAL') && <MLInfoLine />}
     </div>
   )
 }

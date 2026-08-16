@@ -96,6 +96,9 @@ def _compute_series(indicator: str, params: dict, df: pd.DataFrame) -> pd.Series
         return close
     elif indicator == "VOLUME":
         return df["volume"].astype(float)
+    elif indicator == "ML_SIGNAL":
+        from app.ml.predict import get_ml_signal
+        return get_ml_signal(df)
     return pd.Series([np.nan] * len(df), index=df.index)
 
 
@@ -183,6 +186,94 @@ def _eval_rules(
             results.append(False)
 
     return all(results) if logic == "AND" else any(results)
+
+
+def _eval_rules_detail(
+    rules: list,
+    ind_row: dict,
+    close: float,
+    volume: float,
+) -> list[dict]:
+    """Same per-rule evaluation as _eval_rules, but returns the actual left/right
+    values and per-rule pass/fail instead of collapsing to one boolean — used to
+    show "what is the bot currently watching" (e.g. RSI is 42, needs < 30)."""
+    detail = []
+    for rule in rules:
+        left_ind = rule["indicator"]
+        left_params = rule.get("params", {})
+        op = rule["operator"]
+        right_ind = rule.get("right_indicator")
+        right_params = rule.get("right_params") or {}
+        val = rule.get("value")
+
+        left = _get_val(left_ind, left_params, ind_row, close, volume)
+        right = _get_val(right_ind, right_params, ind_row, close, volume) if right_ind else val
+
+        display_right_ind = right_ind
+        display_right = right
+        passed = False
+        if op in ("price_above", "price_below"):
+            # Legacy operators compare `close` against `left` directly (see
+            # _eval_rules) — mirror that exactly, and display PRICE as the
+            # right-hand side since that's what's actually being compared.
+            display_right_ind = "PRICE"
+            display_right = close
+            if left is not None:
+                passed = close > left if op == "price_above" else close < left
+        elif left is not None and right is not None:
+            if op == "<":
+                passed = left < right
+            elif op == ">":
+                passed = left > right
+            elif op == "<=":
+                passed = left <= right
+            elif op == ">=":
+                passed = left >= right
+            # crosses_above/crosses_below need the previous row too — this
+            # summary intentionally shows the current-row comparison only,
+            # since "what's it watching right now" is about levels, not edges.
+
+        detail.append({
+            "indicator": left_ind,
+            "params": left_params,
+            "operator": op,
+            "right_indicator": display_right_ind,
+            "left_value": left,
+            "right_value": display_right,
+            "passed": passed,
+        })
+    return detail
+
+
+def evaluate_latest_signal_detail(buy_conditions: dict, sell_conditions: dict, df: pd.DataFrame) -> dict:
+    """Like evaluate_latest_signal, but also returns a per-rule breakdown of
+    current values vs thresholds for both buy and sell conditions, for display
+    on the Live Trading Terminal's status strip."""
+    buy_rules = buy_conditions.get("rules", [])
+    sell_rules = sell_conditions.get("rules", [])
+
+    ind_series: dict[str, pd.Series] = {}
+    for rule in buy_rules + sell_rules:
+        for ind, params in [
+            (rule["indicator"], rule.get("params", {})),
+            (rule.get("right_indicator"), rule.get("right_params") or {}),
+        ]:
+            if ind and ind not in ("PRICE", "VOLUME"):
+                key = _ind_key(ind, params)
+                if key not in ind_series:
+                    ind_series[key] = _compute_series(ind, params, df)
+
+    i = len(df) - 1
+    close = float(df["close"].iloc[i])
+    volume = float(df["volume"].iloc[i])
+    ind_row = {k: float(s.iloc[i]) for k, s in ind_series.items()}
+
+    return {
+        "date": str(df["date"].iloc[i]),
+        "close": close,
+        "buy_rules": _eval_rules_detail(buy_rules, ind_row, close, volume),
+        "sell_rules": _eval_rules_detail(sell_rules, ind_row, close, volume),
+    }
 
 
 def evaluate_latest_signal(buy_conditions: dict, sell_conditions: dict, df: pd.DataFrame) -> dict:
