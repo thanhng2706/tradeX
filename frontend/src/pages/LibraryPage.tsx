@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { libraryApi, LibraryStrategy } from '../api/library'
 import api from '../api/client'
 
@@ -174,7 +174,6 @@ function StrategyCard({
 }
 
 export default function LibraryPage() {
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const fromPortfolioId = searchParams.get('portfolio') ? Number(searchParams.get('portfolio')) : null
   const [strategies, setStrategies] = useState<LibraryStrategy[]>([])

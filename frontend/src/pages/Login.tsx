@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/client'
 import { useAuthStore } from '../store/authStore'
 
+const REGISTRATION_ENABLED = import.meta.env.VITE_ALLOW_REGISTRATION !== 'false'
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -79,12 +81,14 @@ export default function Login() {
           </form>
         </div>
 
-        <p className="text-gray-600 text-sm text-center mt-5">
-          Don't have an account?{' '}
-          <Link to="/register" className="text-blue-400 hover:text-blue-300 transition-colors">
-            Create one
-          </Link>
-        </p>
+        {REGISTRATION_ENABLED && (
+          <p className="text-gray-600 text-sm text-center mt-5">
+            Don't have an account?{' '}
+            <Link to="/register" className="text-blue-400 hover:text-blue-300 transition-colors">
+              Create one
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   )

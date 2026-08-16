@@ -23,18 +23,14 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>
 }
 
-function PrivateBare({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore((s) => s.token)
-  if (!token) return <Navigate to="/login" replace />
-  return <>{children}</>
-}
+const REGISTRATION_ENABLED = import.meta.env.VITE_ALLOW_REGISTRATION !== 'false'
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/register" element={REGISTRATION_ENABLED ? <Register /> : <Navigate to="/login" replace />} />
         <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/portfolios" element={<PrivateRoute><PortfoliosPage /></PrivateRoute>} />
         <Route path="/portfolios/:portfolioId" element={<PrivateRoute><StrategyList /></PrivateRoute>} />

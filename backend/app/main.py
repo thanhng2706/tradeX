@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.config import settings
 from app.auth.router import router as auth_router
 from app.portfolios.router import router as portfolios_router
 from app.strategies.router import router as strategies_router
@@ -23,7 +24,7 @@ app = FastAPI(title="Tradex API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[o.strip() for o in settings.frontend_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

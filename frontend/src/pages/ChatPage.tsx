@@ -66,15 +66,6 @@ function fmtMetric(val: number | undefined, decimals = 1) {
   return val == null ? '—' : val.toFixed(decimals)
 }
 
-function fmtTime(ts: number): string {
-  const d = new Date(ts)
-  const now = new Date()
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const diff = now.getTime() - d.getTime()
-  if (diff < 7 * 86400000) return d.toLocaleDateString([], { weekday: 'short' })
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-}
-
 // ── Save Modal ───────────────────────────────────────────────────────────────
 function SaveModal({ data, portfolios, onClose, onSaved }: {
   data: StrategyReadyData
