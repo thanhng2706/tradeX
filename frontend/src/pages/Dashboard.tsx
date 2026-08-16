@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/client'
 import { useAuthStore } from '../store/authStore'
+import { performanceApi } from '../api/performance'
 
 interface Portfolio {
   id: number
@@ -62,7 +63,10 @@ function sparkAreaPath(pts: { x: number; y: number }[], height: number): string 
 // ── Ticker Tape ───────────────────────────────────────────────────────────────
 function TickerTape({ tickers }: { tickers: TickerItem[] }) {
   if (!tickers.length) return <div className="h-8 bg-gray-900/80 border-b border-gray-800/60" />
-  const items = [...tickers, ...tickers] // duplicate for seamless loop
+  // Repeated enough times that the strip stays wider than any viewport + one
+  // copy's width for the whole animation cycle — otherwise wide screens can
+  // scroll past the end of a short ticker list and expose blank space.
+  const items = [...tickers, ...tickers, ...tickers, ...tickers, ...tickers, ...tickers]
 
   return (
     <div className="h-8 bg-gray-900/90 border-b border-gray-800/50 overflow-hidden flex items-center select-none">
@@ -239,14 +243,14 @@ function AriaInsightCard({ portfolioCount, totalCapital }: { portfolioCount: num
           <div className="h-3 bg-blue-900/40 rounded animate-pulse w-3/5" />
         </div>
       ) : (
-        <p className="text-gray-200 text-sm leading-relaxed max-w-3xl">{insight}</p>
+        <p className="text-gray-200 text-sm leading-relaxed">{insight}</p>
       )}
     </div>
   )
 }
 
 // ── New Portfolio Modal ────────────────────────────────────────────────────────
-function NewPortfolioModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function NewPortfolioModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: number) => void }) {
   const [name, setName]           = useState('')
   const [description, setDesc]    = useState('')
   const [balance, setBalance]     = useState('10000')
@@ -256,8 +260,8 @@ function NewPortfolioModal({ onClose, onCreated }: { onClose: () => void; onCrea
     e.preventDefault()
     setCreating(true)
     try {
-      await api.post('/portfolios', { name, description, starting_balance: parseFloat(balance) })
-      onCreated()
+      const { data } = await api.post('/portfolios', { name, description, starting_balance: parseFloat(balance) })
+      onCreated(data.id)
       onClose()
     } finally { setCreating(false) }
   }
@@ -344,6 +348,7 @@ export default function Dashboard() {
   const [tickers, setTickers]       = useState<TickerItem[]>([])
   const [showModal, setShowModal]   = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Portfolio | null>(null)
+  const [livePnl, setLivePnl] = useState<{ value: number; count: number } | null>(null)
   const marketOpen = isMarketOpen()
   const username   = user?.email?.split('@')[0] ?? ''
 
@@ -355,6 +360,9 @@ export default function Dashboard() {
   useEffect(() => {
     fetchPortfolios()
     api.get('/market/tickers').then((r) => setTickers(r.data)).catch(() => {})
+    performanceApi.summary()
+      .then((d) => setLivePnl({ value: d.live_pnl_usd, count: d.live_strategy_count }))
+      .catch(() => {})
   }, [])
 
   async function handleDelete() {
@@ -423,7 +431,7 @@ export default function Dashboard() {
 
       {/* Stats row */}
       <div className="max-w-7xl mx-auto px-8 py-8">
-        <div className="grid grid-cols-3 gap-4 mb-10">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
           {[
             { label: 'PORTFOLIOS',    value: String(portfolios.length), sub: 'active' },
             { label: 'TOTAL CAPITAL', value: `$${totalCapital.toLocaleString()}`, sub: '+0.00% today' },
@@ -438,6 +446,26 @@ export default function Dashboard() {
               <p className="text-gray-600 text-xs">{sub}</p>
             </div>
           ))}
+
+          <div className="bg-gray-900/60 border border-gray-800/60 rounded-xl px-5 py-4">
+            <p className="text-gray-600 text-xs font-semibold tracking-widest uppercase mb-2 flex items-center gap-1.5">
+              <svg className="w-3 h-3 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4" /></svg>
+              LIVE P&amp;L
+            </p>
+            {livePnl && livePnl.count > 0 ? (
+              <>
+                <p className={`text-3xl font-black mb-0.5 ${livePnl.value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {livePnl.value >= 0 ? '+' : '-'}${Math.abs(livePnl.value).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </p>
+                <p className="text-gray-600 text-xs">{livePnl.count} real strateg{livePnl.count !== 1 ? 'ies' : 'y'}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-3xl font-black text-gray-700 mb-0.5">—</p>
+                <p className="text-gray-600 text-xs">no real trades yet</p>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Portfolios section */}
@@ -532,7 +560,7 @@ export default function Dashboard() {
       </div>
 
       {showModal && (
-        <NewPortfolioModal onClose={() => setShowModal(false)} onCreated={fetchPortfolios} />
+        <NewPortfolioModal onClose={() => setShowModal(false)} onCreated={(id) => navigate(`/portfolios/${id}`)} />
       )}
 
       {deleteTarget && (

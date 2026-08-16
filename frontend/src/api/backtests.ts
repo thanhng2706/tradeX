@@ -8,10 +8,17 @@ export interface EquityPoint {
 export interface Trade {
   date: string
   action: string
-  price: number
-  shares: number
+  price?: number
+  shares?: number
   value: number
   pnl?: number
+  // Options-only fields
+  option_type?: 'call' | 'put'
+  strike?: number
+  expiration?: string
+  premium?: number
+  contracts?: number
+  reason?: string
 }
 
 export interface BacktestEvent {
@@ -34,6 +41,8 @@ export interface BacktestResult {
   win_rate: number
   num_trades: number
   equity_curve: EquityPoint[]
+  benchmark_equity_curve: EquityPoint[] | null
+  benchmark_return_pct: number | null
   trades: Trade[]
   events: BacktestEvent[]
   events_truncated: boolean

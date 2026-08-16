@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
     anthropic_api_key: str
+    broker_encryption_key: str
 
     class Config:
         env_file = ".env"

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { watchlistsApi, Watchlist, AssetPrice, ChartPoint } from '../api/watchlists'
 
 // ── Sparkline (inline mini chart per row) ────────────────────────────────────
@@ -52,7 +52,7 @@ function StockLogo({ symbol }: { symbol: string }) {
 }
 
 // ── Full chart modal ──────────────────────────────────────────────────────────
-function ChartModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
+function ChartModal({ symbol, price, changePct, onClose }: { symbol: string; price?: number | null; changePct?: number | null; onClose: () => void }) {
   const [data, setData] = useState<ChartPoint[]>([])
   const [loading, setLoading] = useState(true)
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -64,6 +64,13 @@ function ChartModal({ symbol, onClose }: { symbol: string; onClose: () => void }
   const minP = data.length ? Math.min(...data.map((d) => d.close)) : 0
   const maxP = data.length ? Math.max(...data.map((d) => d.close)) : 0
   const pad = (maxP - minP) * 0.06
+  const first = data[0]?.close
+  const last = data[data.length - 1]?.close
+  const periodPositive = first != null && last != null ? last >= first : true
+  const periodChangePct = first ? ((last - first) / first) * 100 : 0
+  const color = periodPositive ? '#10b981' : '#ef4444'
+  const gradientId = `chart-modal-grad-${symbol}`
+  const positive = (changePct ?? 0) >= 0
 
   return (
     <div
@@ -71,16 +78,28 @@ function ChartModal({ symbol, onClose }: { symbol: string; onClose: () => void }
       onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
       className="fixed inset-0 bg-black/75 flex items-center justify-center z-50"
     >
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 w-full max-w-2xl shadow-2xl">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-4xl shadow-2xl">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
             <StockLogo symbol={symbol} />
             <div>
-              <h2 className="text-white text-lg font-bold">{symbol}</h2>
+              <h2 className="text-white text-2xl font-bold">{symbol}</h2>
               <p className="text-gray-500 text-xs">30-day price history</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-2xl leading-none transition-colors">×</button>
+          <div className="flex items-center gap-4">
+            {price != null && (
+              <div className="text-right">
+                <p className="text-white text-2xl font-bold leading-tight">${price.toFixed(2)}</p>
+                {changePct != null && (
+                  <p className={`text-sm font-semibold ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {positive ? '▲' : '▼'} {positive ? '+' : ''}{changePct.toFixed(2)}%
+                  </p>
+                )}
+              </div>
+            )}
+            <button onClick={onClose} className="text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg w-8 h-8 flex items-center justify-center text-xl leading-none transition-colors shrink-0">×</button>
+          </div>
         </div>
 
         {loading ? (
@@ -88,19 +107,45 @@ function ChartModal({ symbol, onClose }: { symbol: string; onClose: () => void }
         ) : !data.length ? (
           <div className="h-52 flex items-center justify-center text-gray-500 text-sm">No data available</div>
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 10 }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
-              <YAxis domain={[minP - pad, maxP + pad]} tick={{ fill: '#6b7280', fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(0)}`} width={55} />
-              <Tooltip
-                contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
-                labelStyle={{ color: '#9ca3af', fontSize: 11 }}
-                formatter={(v: number) => [`$${v.toFixed(2)}`, 'Close']}
-              />
-              <Line type="monotone" dataKey="close" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: '#3b82f6' }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height={360}>
+              <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                    <stop offset="100%" stopColor={color} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis dataKey="date" tick={{ fill: '#6b7280', fontSize: 10 }} tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
+                <YAxis domain={[minP - pad, maxP + pad]} tick={{ fill: '#6b7280', fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(0)}`} width={55} />
+                <Tooltip
+                  contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
+                  labelStyle={{ color: '#9ca3af', fontSize: 11 }}
+                  formatter={(v: number) => [`$${v.toFixed(2)}`, 'Close']}
+                />
+                <Area type="monotone" dataKey="close" stroke={color} strokeWidth={2} fill={`url(#${gradientId})`}
+                  dot={false} activeDot={{ r: 4, fill: color }} />
+              </AreaChart>
+            </ResponsiveContainer>
+
+            <div className="grid grid-cols-3 gap-3 mt-5 pt-5 border-t border-gray-800/60">
+              <div>
+                <p className="text-gray-600 text-xs font-medium mb-1">30d High</p>
+                <p className="text-white text-sm font-bold">${maxP.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-gray-600 text-xs font-medium mb-1">30d Low</p>
+                <p className="text-white text-sm font-bold">${minP.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-gray-600 text-xs font-medium mb-1">30d Change</p>
+                <p className={`text-sm font-bold ${periodPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {periodPositive ? '+' : ''}{periodChangePct.toFixed(2)}%
+                </p>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -121,6 +166,7 @@ export default function WatchlistPage() {
   const [addingSymbol, setAddingSymbol] = useState(false)
   const [addError, setAddError] = useState('')
   const [chartSymbol, setChartSymbol] = useState<string | null>(null)
+  const newWatchlistInputRef = useRef<HTMLInputElement>(null)
 
   const selected = watchlists.find((w) => w.id === selectedId) ?? null
 
@@ -193,24 +239,10 @@ export default function WatchlistPage() {
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Watchlists</p>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2">
-          {watchlists.map((wl) => (
-            <button
-              key={wl.id}
-              onClick={() => setSelectedId(wl.id)}
-              className={`w-full text-left px-3 py-2.5 rounded-lg transition-all mb-0.5 ${
-                wl.id === selectedId ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
-              }`}
-            >
-              <span className="truncate block text-sm font-medium">{wl.name}</span>
-              <span className="text-gray-600 text-xs">{wl.assets.length} stock{wl.assets.length !== 1 ? 's' : ''}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="border-t border-gray-800/60 p-3">
+        <div className="px-3 pb-3 border-b border-gray-800/60">
           <form onSubmit={handleCreateWatchlist} className="flex gap-2">
             <input
+              ref={newWatchlistInputRef}
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="New watchlist…"
@@ -225,6 +257,21 @@ export default function WatchlistPage() {
             </button>
           </form>
         </div>
+
+        <div className="flex-1 overflow-y-auto px-2 pt-2">
+          {watchlists.map((wl) => (
+            <button
+              key={wl.id}
+              onClick={() => setSelectedId(wl.id)}
+              className={`w-full text-left px-3 py-2.5 rounded-lg transition-all mb-0.5 ${
+                wl.id === selectedId ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+              }`}
+            >
+              <span className="truncate block text-sm font-medium">{wl.name}</span>
+              <span className="text-gray-600 text-xs">{wl.assets.length} stock{wl.assets.length !== 1 ? 's' : ''}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Main panel ── */}
@@ -233,6 +280,12 @@ export default function WatchlistPage() {
           <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-600">
             <div className="text-4xl">📋</div>
             <p className="text-sm">Create a watchlist to get started</p>
+            <button
+              onClick={() => newWatchlistInputRef.current?.focus()}
+              className="text-sm bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors font-medium"
+            >
+              + New Watchlist
+            </button>
           </div>
         ) : (
           <>
@@ -376,7 +429,12 @@ export default function WatchlistPage() {
       </div>
 
       {chartSymbol && (
-        <ChartModal symbol={chartSymbol} onClose={() => setChartSymbol(null)} />
+        <ChartModal
+          symbol={chartSymbol}
+          price={priceMap[chartSymbol]?.price}
+          changePct={priceMap[chartSymbol]?.change_pct}
+          onClose={() => setChartSymbol(null)}
+        />
       )}
     </div>
   )

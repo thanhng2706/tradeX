@@ -235,13 +235,13 @@ export default function StockPage() {
         <StatCard label="Dividend Yield" value={info.dividend_yield != null ? `${info.dividend_yield.toFixed(2)}%` : 'N/A'} />
         <StatCard label="EPS (TTM)" value={info.eps != null ? `${cur}${info.eps.toFixed(2)}` : 'N/A'} />
         <StatCard label="Forward EPS" value={info.forward_eps != null ? `${cur}${info.forward_eps.toFixed(2)}` : 'N/A'} />
-        <StatCard label="Revenue" value={formatCompact(info.revenue, cur)} />
-        <StatCard label="Gross Profit" value={formatCompact(info.gross_profit, cur)} />
-        <StatCard label="EBITDA" value={formatCompact(info.ebitda, cur)} />
-        <StatCard label="Free Cash Flow" value={formatCompact(info.free_cash_flow, cur)} />
-        <StatCard label="Total Debt" value={formatCompact(info.total_debt, cur)} />
-        <StatCard label="Total Cash" value={formatCompact(info.total_cash, cur)} />
-        <StatCard label="Enterprise Value" value={formatCompact(info.enterprise_value, cur)} />
+        <StatCard label="Revenue" value={formatCompact(info.revenue, '$')} />
+        <StatCard label="Gross Profit" value={formatCompact(info.gross_profit, '$')} />
+        <StatCard label="EBITDA" value={formatCompact(info.ebitda, '$')} />
+        <StatCard label="Free Cash Flow" value={formatCompact(info.free_cash_flow, '$')} />
+        <StatCard label="Total Debt" value={formatCompact(info.total_debt, '$')} />
+        <StatCard label="Total Cash" value={formatCompact(info.total_cash, '$')} />
+        <StatCard label="Enterprise Value" value={formatCompact(info.enterprise_value, '$')} />
         <StatCard label="Beta" value={formatNum(info.beta)} />
         <StatCard label="52W High" value={info.fifty_two_week_high != null ? `${cur}${info.fifty_two_week_high.toFixed(2)}` : 'N/A'} />
         <StatCard label="52W Low" value={info.fifty_two_week_low != null ? `${cur}${info.fifty_two_week_low.toFixed(2)}` : 'N/A'} />
@@ -323,7 +323,7 @@ export default function StockPage() {
                     <td className="py-2.5 px-3 text-gray-400">{label}</td>
                     {financials.map((f) => (
                       <td key={f.period} className="py-2.5 px-3 text-right text-white">
-                        {formatCompact((f as any)[key], cur)}
+                        {formatCompact((f as any)[key], '$')}
                       </td>
                     ))}
                   </tr>

@@ -5,6 +5,7 @@ from app.models import User, Strategy, Portfolio, BacktestResult
 from app.backtesting.schemas import BacktestRequest, BacktestResultResponse
 from app.backtesting.data import get_price_data
 from app.backtesting.engine import run_backtest
+from app.backtesting.options_engine import run_options_backtest
 from app.backtesting.explainer import explain_backtest
 from app.auth.router import get_current_user
 
@@ -43,13 +44,31 @@ def run_backtest_endpoint(
     if len(df) < 30:
         raise HTTPException(status_code=400, detail="Not enough price data for this date range (need at least 30 trading days)")
 
-    results = run_backtest(
-        buy_conditions=strategy.buy_conditions,
-        sell_conditions=strategy.sell_conditions,
-        df=df,
-        starting_balance=strategy.portfolio.starting_balance,
-        position_size_pct=strategy.position_size_pct,
-    )
+    if strategy.asset_type == "option":
+        if not strategy.option_type or strategy.strike_distance_pct is None:
+            raise HTTPException(status_code=400, detail="Option strategy is missing option_type/strike_distance_pct")
+        results = run_options_backtest(
+            buy_conditions=strategy.buy_conditions,
+            sell_conditions=strategy.sell_conditions,
+            df=df,
+            starting_balance=strategy.portfolio.starting_balance,
+            position_size_pct=strategy.position_size_pct,
+            option_type=strategy.option_type,
+            strike_distance_pct=strategy.strike_distance_pct,
+            dte_min=strategy.dte_min,
+            dte_max=strategy.dte_max,
+            take_profit_pct=strategy.take_profit_pct,
+            stop_loss_pct=strategy.stop_loss_pct,
+            max_days_held=strategy.max_days_held,
+        )
+    else:
+        results = run_backtest(
+            buy_conditions=strategy.buy_conditions,
+            sell_conditions=strategy.sell_conditions,
+            df=df,
+            starting_balance=strategy.portfolio.starting_balance,
+            position_size_pct=strategy.position_size_pct,
+        )
 
     try:
         explanation = explain_backtest(results, strategy.name)
@@ -69,6 +88,8 @@ def run_backtest_endpoint(
         win_rate=results["win_rate"],
         num_trades=results["num_trades"],
         equity_curve=results["equity_curve"],
+        benchmark_equity_curve=results.get("benchmark_equity_curve"),
+        benchmark_return_pct=results.get("benchmark_return_pct"),
         trades=results["trades"],
         events=results["events"],
         events_truncated=results["events_truncated"],

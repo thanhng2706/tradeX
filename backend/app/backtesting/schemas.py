@@ -22,6 +22,8 @@ class BacktestResultResponse(BaseModel):
     win_rate: float
     num_trades: int
     equity_curve: list[dict[str, Any]]
+    benchmark_equity_curve: list[dict[str, Any]] | None = None
+    benchmark_return_pct: float | None = None
     trades: list[dict[str, Any]]
     events: list[dict[str, Any]] = []
     events_truncated: bool = False

@@ -1,4 +1,5 @@
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
@@ -23,6 +24,35 @@ def _get_client() -> Anthropic:
     if _anthropic is None:
         _anthropic = Anthropic(api_key=settings.anthropic_api_key)
     return _anthropic
+
+
+_FX_TTL_SECONDS = 3600
+_fx_cache: dict[str, tuple[float, float]] = {}
+
+
+def _fx_rate_to_usd(currency: str | None) -> float:
+    """1 unit of `currency` in USD. Cached in-process for an hour (FX doesn't move enough intraday to matter here)."""
+    if not currency or currency == "USD":
+        return 1.0
+    cached = _fx_cache.get(currency)
+    now = time.time()
+    if cached and now - cached[1] < _FX_TTL_SECONDS:
+        return cached[0]
+    try:
+        rate = yf.Ticker(f"{currency}USD=X").fast_info.last_price
+        rate = float(rate) if rate else (cached[0] if cached else 1.0)
+    except Exception:
+        rate = cached[0] if cached else 1.0
+    _fx_cache[currency] = (rate, now)
+    return rate
+
+
+def _to_usd(amount: float | None, currency: str | None) -> float | None:
+    """Convert a financial-statement figure (revenue, EBITDA, etc. — reported in `financialCurrency`,
+    which can differ from the trading currency for foreign companies/ADRs) into USD."""
+    if amount is None:
+        return None
+    return amount * _fx_rate_to_usd(currency)
 
 
 def _fetch_quote(symbol: str) -> dict:
@@ -62,6 +92,7 @@ def get_stock(symbol: str):
         raise HTTPException(status_code=404, detail=f"Could not find ticker '{symbol}'")
 
     change_pct = ((price - prev) / prev * 100) if price and prev else None
+    fin_currency = info.get("financialCurrency")
 
     return StockInfo(
         symbol=symbol,
@@ -86,13 +117,13 @@ def get_stock(symbol: str):
         dividend_yield=info.get("dividendYield"),
         eps=info.get("trailingEps"),
         forward_eps=info.get("forwardEps"),
-        revenue=info.get("totalRevenue"),
-        gross_profit=info.get("grossProfits"),
-        ebitda=info.get("ebitda"),
-        free_cash_flow=info.get("freeCashflow"),
-        total_debt=info.get("totalDebt"),
-        total_cash=info.get("totalCash"),
-        enterprise_value=info.get("enterpriseValue"),
+        revenue=_to_usd(info.get("totalRevenue"), fin_currency),
+        gross_profit=_to_usd(info.get("grossProfits"), fin_currency),
+        ebitda=_to_usd(info.get("ebitda"), fin_currency),
+        free_cash_flow=_to_usd(info.get("freeCashflow"), fin_currency),
+        total_debt=_to_usd(info.get("totalDebt"), fin_currency),
+        total_cash=_to_usd(info.get("totalCash"), fin_currency),
+        enterprise_value=_to_usd(info.get("enterpriseValue"), fin_currency),
         beta=info.get("beta"),
         avg_volume=info.get("averageVolume"),
         shares_outstanding=info.get("sharesOutstanding"),
@@ -140,6 +171,11 @@ def get_financials(symbol: str):
     if fin.empty:
         raise HTTPException(status_code=404, detail=f"No financial data for {symbol}")
 
+    try:
+        fin_currency = t.info.get("financialCurrency")
+    except Exception:
+        fin_currency = None
+
     revenue = _row(fin, "Total Revenue")
     gross_profit = _row(fin, "Gross Profit")
     operating_income = _row(fin, "Operating Income")
@@ -154,14 +190,14 @@ def get_financials(symbol: str):
         key = str(col.date())
         rows.append(FinancialsRow(
             period=key,
-            revenue=revenue.get(key),
-            gross_profit=gross_profit.get(key),
-            operating_income=operating_income.get(key),
-            net_income=net_income.get(key),
-            ebitda=ebitda.get(key),
-            total_assets=total_assets.get(key),
-            total_liabilities=total_liabilities.get(key),
-            free_cash_flow=free_cash_flow.get(key),
+            revenue=_to_usd(revenue.get(key), fin_currency),
+            gross_profit=_to_usd(gross_profit.get(key), fin_currency),
+            operating_income=_to_usd(operating_income.get(key), fin_currency),
+            net_income=_to_usd(net_income.get(key), fin_currency),
+            ebitda=_to_usd(ebitda.get(key), fin_currency),
+            total_assets=_to_usd(total_assets.get(key), fin_currency),
+            total_liabilities=_to_usd(total_liabilities.get(key), fin_currency),
+            free_cash_flow=_to_usd(free_cash_flow.get(key), fin_currency),
         ))
     return rows
 
@@ -178,28 +214,29 @@ def generate_report(symbol: str):
         raise HTTPException(status_code=404, detail=f"Could not find ticker '{symbol}'")
 
     currency = info.get('currency', 'USD')
+    fin_currency = info.get('financialCurrency')
 
     prompt = f"""You are a financial analyst writing an AI stock report for {info.get('longName', symbol)} ({symbol}).
 
-Company data (all monetary values in {currency}):
+Company data — price/market-cap/per-share figures are in {currency} (the trading currency); revenue/profit/debt/cash figures have been converted to USD (their original financial-statement currency can differ from the trading currency for foreign companies/ADRs, so they're normalized here for consistency):
 - Sector / Industry: {info.get('sector', 'N/A')} / {info.get('industry', 'N/A')}
 - Price: {info.get('currentPrice') or info.get('regularMarketPrice', 'N/A')} {currency}
-- Market Cap: {info.get('marketCap', 'N/A')}
+- Market Cap: {info.get('marketCap', 'N/A')} {currency}
 - PE Ratio (TTM): {info.get('trailingPE', 'N/A')}
 - Forward PE: {info.get('forwardPE', 'N/A')}
 - PS Ratio: {info.get('priceToSalesTrailing12Months', 'N/A')}
 - Price/Book: {info.get('priceToBook', 'N/A')}
-- EPS (TTM): {info.get('trailingEps', 'N/A')}
-- Forward EPS: {info.get('forwardEps', 'N/A')}
-- Revenue: {info.get('totalRevenue', 'N/A')}
-- Gross Profit: {info.get('grossProfits', 'N/A')}
-- EBITDA: {info.get('ebitda', 'N/A')}
-- Free Cash Flow: {info.get('freeCashflow', 'N/A')}
-- Total Debt: {info.get('totalDebt', 'N/A')}
-- Total Cash: {info.get('totalCash', 'N/A')}
+- EPS (TTM): {info.get('trailingEps', 'N/A')} {currency}
+- Forward EPS: {info.get('forwardEps', 'N/A')} {currency}
+- Revenue: {_to_usd(info.get('totalRevenue'), fin_currency) or 'N/A'} USD
+- Gross Profit: {_to_usd(info.get('grossProfits'), fin_currency) or 'N/A'} USD
+- EBITDA: {_to_usd(info.get('ebitda'), fin_currency) or 'N/A'} USD
+- Free Cash Flow: {_to_usd(info.get('freeCashflow'), fin_currency) or 'N/A'} USD
+- Total Debt: {_to_usd(info.get('totalDebt'), fin_currency) or 'N/A'} USD
+- Total Cash: {_to_usd(info.get('totalCash'), fin_currency) or 'N/A'} USD
 - Beta: {info.get('beta', 'N/A')}
 - Dividend Yield: {info.get('dividendYield', 'N/A')}%
-- 52-Week Range: {info.get('fiftyTwoWeekLow', 'N/A')} - {info.get('fiftyTwoWeekHigh', 'N/A')}
+- 52-Week Range: {info.get('fiftyTwoWeekLow', 'N/A')} - {info.get('fiftyTwoWeekHigh', 'N/A')} {currency}
 
 Business summary: {(info.get('longBusinessSummary') or 'N/A')[:600]}
 
@@ -209,7 +246,7 @@ Write a concise AI stock report in markdown with these sections (use ## headers)
 ## Growth Drivers & Risks
 ## Valuation
 
-Each section should be 2-4 sentences, data-driven, and reference the actual numbers above. Be direct and analytical, not generic. When citing monetary figures, use {currency} (not USD/$ unless the currency actually is USD). No preamble or disclaimer."""
+Each section should be 2-4 sentences, data-driven, and reference the actual numbers above. Be direct and analytical, not generic. When citing monetary figures, use the currency given next to each figure above (price/market-cap/per-share in {currency}, everything else in USD as given). No preamble or disclaimer."""
 
     msg = _get_client().messages.create(
         model="claude-haiku-4-5-20251001",
@@ -235,6 +272,7 @@ def _fetch_screen_info(symbol: str) -> dict | None:
         price = info.get("currentPrice") or info.get("regularMarketPrice")
         if price is None:
             return None
+        fin_currency = info.get("financialCurrency")
         return {
             "symbol": symbol,
             "name": info.get("longName") or info.get("shortName") or symbol,
@@ -244,8 +282,8 @@ def _fetch_screen_info(symbol: str) -> dict | None:
             "currency": info.get("currency"),
             "market_cap": info.get("marketCap"),
             "pe_ratio": info.get("trailingPE"),
-            "revenue": info.get("totalRevenue"),
-            "free_cash_flow": info.get("freeCashflow"),
+            "revenue": _to_usd(info.get("totalRevenue"), fin_currency),
+            "free_cash_flow": _to_usd(info.get("freeCashflow"), fin_currency),
         }
     except Exception:
         return None
@@ -361,15 +399,16 @@ def deep_dive(body: dict):
             info = yf.Ticker(symbol).info
             if info.get("currentPrice") or info.get("regularMarketPrice"):
                 currency = info.get("currency", "USD")
+                fin_currency = info.get("financialCurrency")
                 context = f"""
 
-Relevant company data for {symbol} ({info.get('longName', symbol)}), in {currency}:
+Relevant company data for {symbol} ({info.get('longName', symbol)}) — price/market cap in {currency}, revenue/FCF converted to USD:
 - Sector / Industry: {info.get('sector', 'N/A')} / {info.get('industry', 'N/A')}
-- Price: {info.get('currentPrice') or info.get('regularMarketPrice')}
-- Market Cap: {info.get('marketCap', 'N/A')}
+- Price: {info.get('currentPrice') or info.get('regularMarketPrice')} {currency}
+- Market Cap: {info.get('marketCap', 'N/A')} {currency}
 - PE Ratio: {info.get('trailingPE', 'N/A')}
-- Revenue: {info.get('totalRevenue', 'N/A')}
-- Free Cash Flow: {info.get('freeCashflow', 'N/A')}
+- Revenue: {_to_usd(info.get('totalRevenue'), fin_currency) or 'N/A'} USD
+- Free Cash Flow: {_to_usd(info.get('freeCashflow'), fin_currency) or 'N/A'} USD
 - Beta: {info.get('beta', 'N/A')}"""
         except Exception:
             pass
@@ -378,18 +417,23 @@ Relevant company data for {symbol} ({info.get('longName', symbol)}), in {currenc
 
 Research topic: "{topic}"{context}
 
-Write an extensive, well-structured deep dive in markdown with these sections (use ## headers):
+Write a well-structured deep dive in markdown with these sections (use ## headers):
 ## Overview
 ## Key Data Points
 ## Market & Competitive Context
 ## Risks & Uncertainties
 ## Outlook
 
-Each section should be 3-5 sentences, analytical and specific — cite concrete numbers, companies, or trends where relevant. This is a long-form research report, not a quick summary. No preamble, no disclaimers."""
+Strict length rules — this must be a quick, scannable read, not a research paper:
+- Each section is EITHER 3-5 plain sentences (no sub-bullets) OR 3-4 bullet points of ONE sentence each. Pick whichever fits the section better, but never both in the same section.
+- Do NOT use bolded sub-headers or sub-topics within a section (e.g. no "**Pricing Dynamics:** ..." mini-essays) — one flat block of sentences or bullets per section, nothing nested.
+- Still be analytical and specific — cite concrete numbers, companies, or trends — just be concise about it.
+
+No preamble, no disclaimers."""
 
     msg = _get_client().messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=1600,
+        max_tokens=1500,
         messages=[{"role": "user", "content": prompt}],
     )
     return {"report": msg.content[0].text.strip()}

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { researchApi, Quote } from '../api/research'
 import { getHistory } from '../utils/researchHistory'
+import ScreenerTab from './ScreenerPage'
+import DeepDiveTab from './DeepDivePage'
+import WatchlistsTab from './WatchlistPage'
 
 const POPULAR = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL', 'AMZN', 'META', 'SPY']
 
@@ -63,7 +66,7 @@ function TickerGrid({ symbols, quotes, onSelect }: { symbols: string[]; quotes: 
           >
             <StockLogo symbol={sym} />
             <div className="min-w-0">
-              <p className="text-white text-sm font-semibold">{sym}</p>
+              <p className="text-white text-sm font-bold">{sym}</p>
               {q?.price != null ? (
                 <p className="text-xs text-gray-500">
                   {cur}{q.price.toFixed(2)}{' '}
@@ -82,7 +85,7 @@ function TickerGrid({ symbols, quotes, onSelect }: { symbols: string[]; quotes: 
   )
 }
 
-export default function ResearchPage() {
+function SearchTab() {
   const [query, setQuery] = useState('')
   const [quotes, setQuotes] = useState<Record<string, Quote>>({})
   const [history, setHistory] = useState<string[]>([])
@@ -137,6 +140,22 @@ export default function ResearchPage() {
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-3">Trending</p>
         <TickerGrid symbols={POPULAR} quotes={quotes} onSelect={(s) => navigate(`/stock/${s}`)} />
       </div>
+    </div>
+  )
+}
+
+type TabKey = 'search' | 'screener' | 'deepdive' | 'watchlists'
+
+export default function ResearchPage() {
+  const [searchParams] = useSearchParams()
+  const tab = (searchParams.get('tab') as TabKey) || 'search'
+
+  return (
+    <div className="bg-gray-950">
+      {tab === 'search' && <SearchTab />}
+      {tab === 'screener' && <ScreenerTab />}
+      {tab === 'deepdive' && <DeepDiveTab />}
+      {tab === 'watchlists' && <WatchlistsTab />}
     </div>
   )
 }

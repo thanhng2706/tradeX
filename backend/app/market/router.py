@@ -50,6 +50,13 @@ def get_insight(
     total_capital: float = 0,
     current_user: User = Depends(get_current_user),
 ):
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        quotes = list(ex.map(_fetch_ticker, TICKERS))
+    quotes_line = ", ".join(
+        f"{q['symbol']} ${q['price']} ({q['change_pct']:+.2f}%)"
+        for q in quotes if q["price"] is not None
+    )
+
     client = _get_client()
     resp = client.messages.create(
         model="claude-haiku-4-5-20251001",
@@ -59,8 +66,10 @@ def get_insight(
             "content": (
                 f"You are Aria, an AI trading assistant. A trader has {portfolio_count} portfolio(s) "
                 f"with ${total_capital:,.0f} total capital. "
-                "Generate 1-2 sentences of specific, actionable market insight. "
-                "Mention a real ticker (SPY, NVDA, AAPL, etc.) or market condition. "
+                f"Current live quotes: {quotes_line}. "
+                "Generate 1-2 sentences of specific, actionable market insight using ONLY the real "
+                "prices/changes given above — do not invent price levels, support/resistance, or stop "
+                "levels that aren't derivable from these numbers. "
                 "Sound like a Bloomberg terminal alert. No markdown, no greetings."
             ),
         }],

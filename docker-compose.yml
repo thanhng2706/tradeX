@@ -25,6 +25,7 @@ services:
       DATABASE_URL: postgresql://tradex:tradex@db:5432/tradex
       SECRET_KEY: ${SECRET_KEY:-tradex-dev-secret-key-change-in-production}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      BROKER_ENCRYPTION_KEY: ${BROKER_ENCRYPTION_KEY}
     depends_on:
       db:
         condition: service_healthy

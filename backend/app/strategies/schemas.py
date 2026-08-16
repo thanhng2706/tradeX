@@ -15,6 +15,14 @@ class StrategyCreate(BaseModel):
     buy_conditions: ConditionSet = ConditionSet()
     sell_conditions: ConditionSet = ConditionSet()
     position_size_pct: float = 10.0
+    asset_type: str = "equity"
+    option_type: str | None = None
+    strike_distance_pct: float | None = None
+    dte_min: int | None = None
+    dte_max: int | None = None
+    take_profit_pct: float | None = None
+    stop_loss_pct: float | None = None
+    max_days_held: int | None = None
 
 
 class StrategyUpdate(BaseModel):
@@ -24,6 +32,14 @@ class StrategyUpdate(BaseModel):
     buy_conditions: ConditionSet | None = None
     sell_conditions: ConditionSet | None = None
     position_size_pct: float | None = None
+    asset_type: str | None = None
+    option_type: str | None = None
+    strike_distance_pct: float | None = None
+    dte_min: int | None = None
+    dte_max: int | None = None
+    take_profit_pct: float | None = None
+    stop_loss_pct: float | None = None
+    max_days_held: int | None = None
 
 
 class StrategyResponse(BaseModel):
@@ -34,6 +50,14 @@ class StrategyResponse(BaseModel):
     buy_conditions: dict[str, Any]
     sell_conditions: dict[str, Any]
     position_size_pct: float
+    asset_type: str
+    option_type: str | None
+    strike_distance_pct: float | None
+    dte_min: int | None
+    dte_max: int | None
+    take_profit_pct: float | None
+    stop_loss_pct: float | None
+    max_days_held: int | None
     created_at: datetime
     portfolio_id: int
 

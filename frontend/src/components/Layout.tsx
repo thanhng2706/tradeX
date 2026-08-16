@@ -1,11 +1,111 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
+import { notificationsApi, NotificationItem } from '../api/notifications'
+
+const NOTIF_DOT: Record<string, string> = {
+  BUY_SIGNAL: 'bg-blue-400',
+  SELL_SIGNAL: 'bg-purple-400',
+  SIGNAL_SUPPRESSED: 'bg-yellow-500',
+  ORDER_SUBMITTED: 'bg-green-400',
+  ORDER_FILLED: 'bg-emerald-400',
+  ORDER_REJECTED: 'bg-red-400',
+  DEPLOYMENT_PAUSED: 'bg-red-400',
+  ORDER_BLOCKED_CAP: 'bg-amber-400',
+  POSITION_CLOSED: 'bg-orange-400',
+}
+
+function NotificationBell() {
+  const [open, setOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [items, setItems] = useState<NotificationItem[]>([])
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function poll() {
+      notificationsApi.list().then((res) => {
+        setUnreadCount(res.unread_count)
+        setItems(res.items)
+      }).catch(() => {})
+    }
+    poll()
+    const interval = setInterval(poll, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  function handleOpen() {
+    setOpen((v) => !v)
+    if (!open && unreadCount > 0) {
+      notificationsApi.markRead().then((res) => {
+        setUnreadCount(res.unread_count)
+        setItems(res.items)
+      }).catch(() => {})
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={handleOpen}
+        className="relative text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-gray-800/60 transition-all"
+      >
+        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full pt-2 z-50">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl shadow-2xl w-80 max-h-96 overflow-y-auto">
+            <div className="px-4 py-3 border-b border-gray-800/60">
+              <h3 className="text-sm font-semibold text-white">Notifications</h3>
+            </div>
+            {items.length === 0 ? (
+              <p className="text-gray-600 text-sm px-4 py-6 text-center">No trade activity yet.</p>
+            ) : (
+              items.map((item) => (
+                <Link
+                  key={item.id}
+                  to={`/portfolios/${item.portfolio_id}/strategies/${item.strategy_id}/broker-deploy`}
+                  onClick={() => setOpen(false)}
+                  className="flex items-start gap-2.5 px-4 py-3 hover:bg-gray-800/60 transition-colors border-b border-gray-800/40 last:border-0"
+                >
+                  <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${NOTIF_DOT[item.type] || 'bg-gray-500'}`} />
+                  <div className="min-w-0">
+                    <p className="text-xs text-gray-300">
+                      <span className="font-medium text-white">{item.strategy_name}</span> · {item.ticker}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{item.message}</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">{new Date(item.created_at).toLocaleString()}</p>
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const RESEARCH_ITEMS = [
   { to: '/research', label: 'Stock Search' },
-  { to: '/research/screener', label: 'Screener' },
-  { to: '/research/deep-dive', label: 'Deep Dive' },
+  { to: '/research?tab=screener', label: 'Screener' },
+  { to: '/research?tab=deepdive', label: 'Deep Dive' },
+  { to: '/research?tab=watchlists', label: 'Watchlists' },
 ]
 
 function ResearchDropdown() {
@@ -85,19 +185,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         >
           Portfolios
         </Link>
-        <Link
-          to="/library"
-          className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800/60 transition-all"
-        >
-          Library
-        </Link>
-        <Link
-          to="/watchlists"
-          className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800/60 transition-all"
-        >
-          Watchlists
-        </Link>
         <ResearchDropdown />
+        <Link
+          to="/broker"
+          className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800/60 transition-all"
+        >
+          Broker
+        </Link>
         <Link
           to="/chat"
           className="text-sm text-gray-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-gray-800/60 transition-all flex items-center gap-1.5"
@@ -109,6 +203,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </Link>
 
         <div className="ml-auto flex items-center gap-4">
+          <NotificationBell />
           {user?.email && (
             <span className="text-xs text-gray-600 hidden sm:block">{user.email}</span>
           )}

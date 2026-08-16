@@ -12,12 +12,23 @@ export interface OptimizedResult {
   win_rate: number
   num_trades: number
   final_balance: number
+  validation_total_return_pct?: number | null
+  validation_annualized_return_pct?: number | null
+  validation_sharpe_ratio?: number | null
+  validation_max_drawdown_pct?: number | null
+  validation_win_rate?: number | null
+  validation_num_trades?: number | null
+  ai_verdict?: string | null
 }
 
 export interface OptimizeResponse {
   strategy_id: number
   ticker: string
   starting_balance: number
+  train_start: string
+  train_end: string
+  validation_start: string
+  validation_end: string
   results: OptimizedResult[]
 }
 

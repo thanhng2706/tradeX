@@ -12,11 +12,10 @@ import OptimizerPage from './pages/OptimizerPage'
 import PaperTradingPage from './pages/PaperTradingPage'
 import LibraryPage from './pages/LibraryPage'
 import ChatPage from './pages/ChatPage'
-import WatchlistPage from './pages/WatchlistPage'
 import ResearchPage from './pages/ResearchPage'
-import ScreenerPage from './pages/ScreenerPage'
-import DeepDivePage from './pages/DeepDivePage'
 import StockPage from './pages/StockPage'
+import BrokerPage from './pages/BrokerPage'
+import BrokerDeployPage from './pages/BrokerDeployPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -44,13 +43,15 @@ export default function App() {
         <Route path="/portfolios/:portfolioId/strategies/:strategyId/backtest" element={<PrivateRoute><BacktestPage /></PrivateRoute>} />
         <Route path="/portfolios/:portfolioId/strategies/:strategyId/optimize" element={<PrivateRoute><OptimizerPage /></PrivateRoute>} />
         <Route path="/portfolios/:portfolioId/strategies/:strategyId/paper" element={<PrivateRoute><PaperTradingPage /></PrivateRoute>} />
+        <Route path="/portfolios/:portfolioId/strategies/:strategyId/broker-deploy" element={<PrivateRoute><BrokerDeployPage /></PrivateRoute>} />
         <Route path="/library" element={<PrivateRoute><LibraryPage /></PrivateRoute>} />
-        <Route path="/watchlists" element={<PrivateRoute><WatchlistPage /></PrivateRoute>} />
+        <Route path="/watchlists" element={<Navigate to="/research?tab=watchlists" replace />} />
         <Route path="/research" element={<PrivateRoute><ResearchPage /></PrivateRoute>} />
-        <Route path="/research/screener" element={<PrivateRoute><ScreenerPage /></PrivateRoute>} />
-        <Route path="/research/deep-dive" element={<PrivateRoute><DeepDivePage /></PrivateRoute>} />
+        <Route path="/research/screener" element={<Navigate to="/research?tab=screener" replace />} />
+        <Route path="/research/deep-dive" element={<Navigate to="/research?tab=deepdive" replace />} />
         <Route path="/stock/:symbol" element={<PrivateRoute><StockPage /></PrivateRoute>} />
         <Route path="/chat" element={<PrivateRoute><ChatPage /></PrivateRoute>} />
+        <Route path="/broker" element={<PrivateRoute><BrokerPage /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

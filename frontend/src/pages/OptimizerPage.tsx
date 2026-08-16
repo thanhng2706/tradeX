@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { optimizerApi, OptimizedResult } from '../api/optimizer'
 import { strategiesApi, Strategy } from '../api/strategies'
+import { backtestsApi } from '../api/backtests'
 
 function fmt(n: number, d = 2) {
   return n.toFixed(d)
@@ -34,6 +35,7 @@ export default function OptimizerPage() {
   })
   const [running, setRunning] = useState(false)
   const [results, setResults] = useState<OptimizedResult[] | null>(null)
+  const [dateRanges, setDateRanges] = useState<{ trainStart: string; trainEnd: string; validStart: string; validEnd: string } | null>(null)
   const [error, setError] = useState('')
   const [applying, setApplying] = useState<number | null>(null)
 
@@ -51,6 +53,7 @@ export default function OptimizerPage() {
     try {
       const res = await optimizerApi.run(Number(strategyId), startDate, endDate)
       setResults(res.results)
+      setDateRanges({ trainStart: res.train_start, trainEnd: res.train_end, validStart: res.validation_start, validEnd: res.validation_end })
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'Optimization failed')
     } finally {
@@ -62,6 +65,10 @@ export default function OptimizerPage() {
     setApplying(result.rank)
     try {
       await optimizerApi.apply(Number(strategyId), result)
+      // Run a real backtest with the newly applied conditions over the same range that was
+      // just optimized, so the Backtest page's saved-result auto-restore shows fresh numbers
+      // instead of whatever was last saved under the strategy's previous rules.
+      await backtestsApi.run(Number(strategyId), startDate, endDate)
       navigate(`/portfolios/${portfolioId}/strategies/${strategyId}/backtest`)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to apply')
@@ -91,7 +98,11 @@ export default function OptimizerPage() {
           <h2 className="font-semibold mb-1">Genetic Algorithm Optimizer</h2>
           <p className="text-gray-500 text-sm mb-5">
             Runs ~300 backtests to find the best RSI period and threshold values for your strategy.
-            Takes 20–40 seconds.
+            The date range is split 80/20 — the search only ever sees the first 80% (training);
+            the last 20% (validation) is held out to check whether a result actually holds up on
+            data it never searched against, not just numbers it was tuned to produce. Results are
+            ranked by validation performance, so "Best Found" means most trustworthy, not just
+            best at memorizing the training window. Takes 20–40 seconds.
           </p>
           <div className="flex items-end gap-4 flex-wrap">
             <div>
@@ -140,7 +151,15 @@ export default function OptimizerPage() {
 
         {results && results.length > 0 && (
           <div className="space-y-4">
-            <h2 className="font-semibold text-lg">Top {results.length} Results</h2>
+            <div>
+              <h2 className="font-semibold text-lg">Top {results.length} Results</h2>
+              {dateRanges && (
+                <p className="text-gray-500 text-xs mt-1">
+                  Training: {dateRanges.trainStart} → {dateRanges.trainEnd} &nbsp;·&nbsp;
+                  Validation: {dateRanges.validStart} → {dateRanges.validEnd}
+                </p>
+              )}
+            </div>
             {results.map((r) => (
               <div
                 key={r.rank}
@@ -164,7 +183,8 @@ export default function OptimizerPage() {
                   </button>
                 </div>
 
-                {/* Metrics */}
+                {/* Training metrics */}
+                <p className="text-gray-600 text-[10px] font-semibold uppercase tracking-wide mb-1.5">Training</p>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-4">
                   {[
                     { label: 'Return', value: `${r.total_return_pct >= 0 ? '+' : ''}${fmt(r.total_return_pct)}%`, green: r.total_return_pct >= 0 },
@@ -180,6 +200,49 @@ export default function OptimizerPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Validation metrics — held-out data the search never saw */}
+                {r.validation_sharpe_ratio != null && (
+                  <div className={`rounded-lg p-3 mb-4 border ${
+                    r.validation_sharpe_ratio < 0 || (r.validation_num_trades ?? 0) === 0
+                      ? 'bg-amber-950/30 border-amber-800/50'
+                      : 'bg-gray-800/50 border-gray-700/50'
+                  }`}>
+                    <p className={`text-[10px] font-semibold uppercase tracking-wide mb-1.5 ${
+                      r.validation_sharpe_ratio < 0 || (r.validation_num_trades ?? 0) === 0 ? 'text-amber-500' : 'text-gray-600'
+                    }`}>
+                      Validation (held-out, never searched)
+                    </p>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                      {[
+                        { label: 'Return', value: `${(r.validation_total_return_pct ?? 0) >= 0 ? '+' : ''}${fmt(r.validation_total_return_pct ?? 0)}%`, green: (r.validation_total_return_pct ?? 0) >= 0 },
+                        { label: 'Ann. Return', value: `${(r.validation_annualized_return_pct ?? 0) >= 0 ? '+' : ''}${fmt(r.validation_annualized_return_pct ?? 0)}%`, green: (r.validation_annualized_return_pct ?? 0) >= 0 },
+                        { label: 'Sharpe', value: fmt(r.validation_sharpe_ratio ?? 0, 3) },
+                        { label: 'Drawdown', value: `${fmt(r.validation_max_drawdown_pct ?? 0)}%`, red: true },
+                        { label: 'Win Rate', value: `${fmt(r.validation_win_rate ?? 0)}%` },
+                        { label: 'Trades', value: String(r.validation_num_trades ?? 0) },
+                      ].map(({ label, value, green, red }) => (
+                        <div key={label}>
+                          <p className="text-gray-600 text-xs">{label}</p>
+                          <p className={`font-semibold text-sm ${green ? 'text-green-400' : red ? 'text-red-400' : 'text-white'}`}>{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {(r.validation_sharpe_ratio < 0 || (r.validation_num_trades ?? 0) === 0) && (
+                      <p className="text-amber-500 text-xs mt-2">
+                        ⚠ Weak or no performance on unseen data — likely overfit to the training window.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* AI verdict — one line comparing training vs. validation for this specific result */}
+                {r.ai_verdict && (
+                  <p className="text-blue-300 text-xs italic mb-4 flex gap-1.5">
+                    <span className="shrink-0">✦</span>
+                    <span>{r.ai_verdict}</span>
+                  </p>
+                )}
 
                 {/* Conditions */}
                 <div className="space-y-1.5">

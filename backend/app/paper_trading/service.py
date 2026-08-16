@@ -5,12 +5,18 @@ from app.backtesting.data import get_price_data
 from app.backtesting.engine import run_backtest
 from app.models import PaperTrade, Strategy
 
+# Same lookback used by the real Alpaca scheduler (app/broker/scheduler.py) — long enough
+# for any indicator period (e.g. SMA/EMA/RSI(200)) to be non-NaN by the time simulated
+# trading actually starts at started_at.
+LOOKBACK_DAYS = 400
+
 
 def get_paper_status(paper_trade: PaperTrade, strategy: Strategy, db: Session) -> dict:
     today = date.today()
-    # Fetch back at least 5 days so we always have a current price reference.
-    # Use today+1 as end so yfinance (exclusive end) includes today's data when available.
-    fetch_start = min(paper_trade.started_at, today - timedelta(days=5))
+    # Fetch enough history BEFORE started_at to warm up indicators, not just a few days
+    # for a current-price reference — a strategy using RSI(40)/SMA(200)/etc. would
+    # otherwise silently never fire for weeks after activation.
+    fetch_start = paper_trade.started_at - timedelta(days=LOOKBACK_DAYS)
     fetch_end = today + timedelta(days=1)
 
     try:
@@ -23,10 +29,10 @@ def get_paper_status(paper_trade: PaperTrade, strategy: Strategy, db: Session) -
 
     current_price = float(df["close"].iloc[-1])
 
-    # Filter DataFrame to the actual paper trading period
-    sim_df = df[df["date"] >= paper_trade.started_at].reset_index(drop=True)
+    # Just for the early-exit check below — has any real trading day passed since activation?
+    live_days = df[df["date"] >= paper_trade.started_at]
 
-    if len(sim_df) < 2:
+    if len(live_days) < 1:
         # Started today or no trading days have passed yet
         return {
             "total_return_pct": 0.0,
@@ -49,9 +55,11 @@ def get_paper_status(paper_trade: PaperTrade, strategy: Strategy, db: Session) -
     result = run_backtest(
         buy_conditions=strategy.buy_conditions,
         sell_conditions=strategy.sell_conditions,
-        df=sim_df,
+        df=df,
         starting_balance=strategy.portfolio.starting_balance,
         position_size_pct=strategy.position_size_pct,
+        sim_start_date=paper_trade.started_at,
+        close_at_end=False,
     )
 
     # Determine current position from trade log
@@ -84,5 +92,5 @@ def get_paper_status(paper_trade: PaperTrade, strategy: Strategy, db: Session) -
         "recent_trades": result["trades"][-10:],
         "equity_curve": result["equity_curve"],
         "events": result["events"][-50:],
-        "days_active": len(sim_df),
+        "days_active": len(result["equity_curve"]),
     }

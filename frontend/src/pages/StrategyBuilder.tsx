@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { strategiesApi, Rule, ConditionSet } from '../api/strategies'
+import { strategiesApi, Rule, ConditionSet, AssetType, OptionType } from '../api/strategies'
 
 // ── Indicator metadata ────────────────────────────────────────────────────────
 
@@ -274,6 +274,127 @@ function ConditionBuilder({
   )
 }
 
+function OptionLegPanel({
+  optionType, setOptionType,
+  strikeDistance, setStrikeDistance,
+  dteMin, setDteMin,
+  dteMax, setDteMax,
+  takeProfit, setTakeProfit,
+  stopLoss, setStopLoss,
+  maxDaysHeld, setMaxDaysHeld,
+}: {
+  optionType: OptionType; setOptionType: (v: OptionType) => void
+  strikeDistance: string; setStrikeDistance: (v: string) => void
+  dteMin: string; setDteMin: (v: string) => void
+  dteMax: string; setDteMax: (v: string) => void
+  takeProfit: string; setTakeProfit: (v: string) => void
+  stopLoss: string; setStopLoss: (v: string) => void
+  maxDaysHeld: string; setMaxDaysHeld: (v: string) => void
+}) {
+  return (
+    <div className="bg-gray-900 rounded-xl p-5 space-y-4 border border-purple-900/60">
+      <h3 className="font-medium text-sm text-gray-300">Option Leg</h3>
+      <p className="text-xs text-gray-500 -mt-2">
+        Buy/sell conditions above still control WHEN to open/close — this configures WHAT gets traded.
+      </p>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Option Type</label>
+          <div className="flex rounded-lg overflow-hidden border border-gray-700/60 w-fit">
+            {(['call', 'put'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setOptionType(t)}
+                className={`px-4 py-2 text-sm capitalize transition-colors ${
+                  optionType === t ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Strike Distance % (OTM, negative = ITM)</label>
+          <input
+            type="number"
+            value={strikeDistance}
+            onChange={(e) => setStrikeDistance(e.target.value)}
+            step={0.5}
+            placeholder="5"
+            className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">DTE Min</label>
+          <input
+            type="number"
+            value={dteMin}
+            onChange={(e) => setDteMin(e.target.value)}
+            min={1}
+            placeholder="30"
+            className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">DTE Max</label>
+          <input
+            type="number"
+            value={dteMax}
+            onChange={(e) => setDteMax(e.target.value)}
+            min={1}
+            placeholder="45"
+            className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Take Profit % (optional)</label>
+          <input
+            type="number"
+            value={takeProfit}
+            onChange={(e) => setTakeProfit(e.target.value)}
+            placeholder="50"
+            className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Stop Loss % (optional)</label>
+          <input
+            type="number"
+            value={stopLoss}
+            onChange={(e) => setStopLoss(e.target.value)}
+            placeholder="30"
+            className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Max Days Held (optional)</label>
+          <input
+            type="number"
+            value={maxDaysHeld}
+            onChange={(e) => setMaxDaysHeld(e.target.value)}
+            min={1}
+            placeholder="20"
+            className="w-full bg-gray-800 text-white rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-purple-500"
+          />
+        </div>
+      </div>
+
+      <p className="text-xs text-gray-600">
+        Backtests for options use simulated pricing (Black-Scholes + historical volatility), not real historical option quotes —
+        Tradex has no historical options-chain data source yet.
+      </p>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function StrategyBuilder() {
@@ -287,6 +408,14 @@ export default function StrategyBuilder() {
   const [positionSize, setPositionSize] = useState('10')
   const [buyConditions, setBuyConditions] = useState<ConditionSet>(emptyConditionSet())
   const [sellConditions, setSellConditions] = useState<ConditionSet>(emptyConditionSet())
+  const [assetType, setAssetType] = useState<AssetType>('equity')
+  const [optionType, setOptionType] = useState<OptionType>('call')
+  const [strikeDistance, setStrikeDistance] = useState('5')
+  const [dteMin, setDteMin] = useState('30')
+  const [dteMax, setDteMax] = useState('45')
+  const [takeProfit, setTakeProfit] = useState('')
+  const [stopLoss, setStopLoss] = useState('')
+  const [maxDaysHeld, setMaxDaysHeld] = useState('')
   const [nlText, setNlText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -303,6 +432,14 @@ export default function StrategyBuilder() {
           setPositionSize(String(s.position_size_pct))
           setBuyConditions(s.buy_conditions)
           setSellConditions(s.sell_conditions)
+          setAssetType(s.asset_type)
+          if (s.option_type) setOptionType(s.option_type)
+          if (s.strike_distance_pct != null) setStrikeDistance(String(s.strike_distance_pct))
+          if (s.dte_min != null) setDteMin(String(s.dte_min))
+          if (s.dte_max != null) setDteMax(String(s.dte_max))
+          if (s.take_profit_pct != null) setTakeProfit(String(s.take_profit_pct))
+          if (s.stop_loss_pct != null) setStopLoss(String(s.stop_loss_pct))
+          if (s.max_days_held != null) setMaxDaysHeld(String(s.max_days_held))
         }
       })
     }
@@ -334,6 +471,14 @@ export default function StrategyBuilder() {
         buy_conditions: buyConditions,
         sell_conditions: sellConditions,
         position_size_pct: parseFloat(positionSize),
+        asset_type: assetType,
+        option_type: assetType === 'option' ? optionType : null,
+        strike_distance_pct: assetType === 'option' ? parseFloat(strikeDistance) : null,
+        dte_min: assetType === 'option' ? parseInt(dteMin, 10) : null,
+        dte_max: assetType === 'option' ? parseInt(dteMax, 10) : null,
+        take_profit_pct: assetType === 'option' && takeProfit ? parseFloat(takeProfit) : null,
+        stop_loss_pct: assetType === 'option' && stopLoss ? parseFloat(stopLoss) : null,
+        max_days_held: assetType === 'option' && maxDaysHeld ? parseInt(maxDaysHeld, 10) : null,
       }
       if (isEditing) {
         await strategiesApi.update(Number(strategyId), payload)
@@ -386,6 +531,22 @@ export default function StrategyBuilder() {
 
         {/* Basic info */}
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Asset Type</label>
+            <div className="flex rounded-lg overflow-hidden border border-gray-700/60 w-fit">
+              {(['equity', 'option'] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setAssetType(t)}
+                  className={`px-4 py-2 text-sm capitalize transition-colors ${
+                    assetType === t ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">Strategy Name</label>
@@ -431,6 +592,19 @@ export default function StrategyBuilder() {
             </div>
           </div>
         </div>
+
+        {/* Option leg config */}
+        {assetType === 'option' && (
+          <OptionLegPanel
+            optionType={optionType} setOptionType={setOptionType}
+            strikeDistance={strikeDistance} setStrikeDistance={setStrikeDistance}
+            dteMin={dteMin} setDteMin={setDteMin}
+            dteMax={dteMax} setDteMax={setDteMax}
+            takeProfit={takeProfit} setTakeProfit={setTakeProfit}
+            stopLoss={stopLoss} setStopLoss={setStopLoss}
+            maxDaysHeld={maxDaysHeld} setMaxDaysHeld={setMaxDaysHeld}
+          />
+        )}
 
         {/* Condition builders */}
         <ConditionBuilder label="Buy Conditions" value={buyConditions} onChange={setBuyConditions} />

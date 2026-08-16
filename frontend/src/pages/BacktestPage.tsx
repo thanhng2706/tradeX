@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip,
+  LineChart, Line, XAxis, YAxis, Tooltip, Legend,
   ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import { backtestsApi, BacktestResult } from '../api/backtests'
@@ -11,12 +11,13 @@ function fmt(n: number, decimals = 2) {
   return n.toFixed(decimals)
 }
 
-function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+function MetricCard({ label, value, sub, note, color }: { label: string; value: string; sub?: string; note?: string; color?: string }) {
   return (
     <div className="bg-gray-900 rounded-xl p-4">
       <p className="text-gray-500 text-xs mb-1">{label}</p>
       <p className={`text-2xl font-bold ${color ?? 'text-white'}`}>{value}</p>
       {sub && <p className="text-gray-600 text-xs mt-0.5">{sub}</p>}
+      {note && <p className="text-gray-600 text-[11px] italic mt-1">{note}</p>}
     </div>
   )
 }
@@ -61,6 +62,19 @@ export default function BacktestPage() {
     })
   }, [portfolioId, strategyId])
 
+  // Restore the most recent saved backtest for this strategy, so revisiting the page
+  // doesn't show a blank slate when a result already exists.
+  useEffect(() => {
+    backtestsApi.list(Number(strategyId)).then((list) => {
+      const latest = list[0]
+      if (latest) {
+        setResult(latest)
+        setStartDate(latest.start_date)
+        setEndDate(latest.end_date)
+      }
+    })
+  }, [strategyId])
+
   async function handleRun() {
     setRunning(true)
     setError('')
@@ -81,10 +95,20 @@ export default function BacktestPage() {
 
   // Thin out equity curve for chart performance (max 300 points)
   const chartData = result
-    ? result.equity_curve.filter((_, i) =>
-        i % Math.max(1, Math.floor(result.equity_curve.length / 300)) === 0
-      )
+    ? result.equity_curve
+        .map((p, i) => ({
+          date: p.date,
+          value: p.value,
+          benchmark: result.benchmark_equity_curve?.[i]?.value,
+        }))
+        .filter((_, i) =>
+          i % Math.max(1, Math.floor(result.equity_curve.length / 300)) === 0
+        )
     : []
+
+  const alphaPct = result && result.benchmark_return_pct != null
+    ? result.total_return_pct - result.benchmark_return_pct
+    : null
 
   return (
     <div>
@@ -175,6 +199,15 @@ export default function BacktestPage() {
                 label="Final Balance"
                 value={`$${result.final_balance.toLocaleString()}`}
               />
+              {alphaPct != null && (
+                <MetricCard
+                  label="vs Buy & Hold"
+                  value={`${alphaPct >= 0 ? '+' : ''}${fmt(alphaPct)}pp`}
+                  sub={`Buy & hold ${strategy?.ticker ?? ''}: ${result.benchmark_return_pct! >= 0 ? '+' : ''}${fmt(result.benchmark_return_pct!)}%`}
+                  note={strategy ? `Benchmark assumes 100% allocation; your strategy sizes positions at ${strategy.position_size_pct}%` : undefined}
+                  color={alphaPct >= 0 ? 'text-green-400' : 'text-red-400'}
+                />
+              )}
             </div>
 
             {/* Equity curve */}
@@ -197,13 +230,27 @@ export default function BacktestPage() {
                   <Tooltip
                     contentStyle={{ background: '#111827', border: '1px solid #374151', borderRadius: 8 }}
                     labelStyle={{ color: '#9ca3af' }}
-                    formatter={(v: number) => [`$${v.toLocaleString()}`, 'Portfolio']}
+                    formatter={(v: number, name: string) => [`$${v.toLocaleString()}`, name]}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: 12 }}
+                    formatter={(value) => <span style={{ color: '#9ca3af' }}>{value}</span>}
                   />
                   <Line
                     type="monotone"
                     dataKey="value"
+                    name="Strategy"
                     stroke="#3b82f6"
                     strokeWidth={2}
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="benchmark"
+                    name={`Buy & Hold ${strategy?.ticker ?? ''}`}
+                    stroke="#6b7280"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
                     dot={false}
                   />
                 </LineChart>
@@ -238,15 +285,27 @@ export default function BacktestPage() {
                   <span className="text-gray-500">({result.trades.length} trades)</span>
                   <span className="ml-auto text-gray-500">{showTrades ? '▲' : '▼'}</span>
                 </button>
-                {showTrades && (
+                {showTrades && (() => {
+                  const isOptions = strategy?.asset_type === 'option'
+                  return (
                   <div className="mt-4 overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-gray-500 text-xs border-b border-gray-800">
                           <th className="text-left pb-2">Date</th>
                           <th className="text-left pb-2">Action</th>
-                          <th className="text-right pb-2">Price</th>
-                          <th className="text-right pb-2">Shares</th>
+                          {isOptions ? (
+                            <>
+                              <th className="text-left pb-2">Strike/Exp</th>
+                              <th className="text-right pb-2">Premium</th>
+                              <th className="text-right pb-2">Contracts</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="text-right pb-2">Price</th>
+                              <th className="text-right pb-2">Shares</th>
+                            </>
+                          )}
                           <th className="text-right pb-2">Value</th>
                           <th className="text-right pb-2">P&L</th>
                         </tr>
@@ -256,10 +315,22 @@ export default function BacktestPage() {
                           <tr key={i} className="border-b border-gray-800/50 text-gray-400">
                             <td className="py-2 font-mono text-xs">{t.date}</td>
                             <td className={`py-2 font-medium ${t.action.startsWith('BUY') ? 'text-green-400' : 'text-red-400'}`}>
-                              {t.action}
+                              {t.action}{t.reason ? <span className="text-gray-600 text-xs ml-1">({t.reason})</span> : null}
                             </td>
-                            <td className="py-2 text-right">${t.price}</td>
-                            <td className="py-2 text-right">{t.shares}</td>
+                            {isOptions ? (
+                              <>
+                                <td className="py-2 text-left font-mono text-xs">
+                                  {t.option_type} ${t.strike} · {t.expiration}
+                                </td>
+                                <td className="py-2 text-right">${t.premium}</td>
+                                <td className="py-2 text-right">{t.contracts}</td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="py-2 text-right">${t.price}</td>
+                                <td className="py-2 text-right">{t.shares}</td>
+                              </>
+                            )}
                             <td className="py-2 text-right">${t.value.toLocaleString()}</td>
                             <td className={`py-2 text-right ${t.pnl !== undefined ? (t.pnl >= 0 ? 'text-green-400' : 'text-red-400') : ''}`}>
                               {t.pnl !== undefined ? `${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}` : '—'}
@@ -269,7 +340,8 @@ export default function BacktestPage() {
                       </tbody>
                     </table>
                   </div>
-                )}
+                  )
+                })()}
               </div>
             )}
 

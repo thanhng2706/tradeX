@@ -11,6 +11,11 @@ from app.chat.router import router as chat_router
 from app.watchlist.router import router as watchlist_router
 from app.market.router import router as market_router
 from app.research.router import router as research_router
+from app.broker.router import router as broker_router
+from app.broker.deploy_router import router as broker_deploy_router
+from app.broker.notifications_router import router as notifications_router
+from app.performance.router import router as performance_router
+from app.broker.scheduler import start_scheduler, stop_scheduler
 
 app = FastAPI(title="Tradex API")
 
@@ -33,6 +38,20 @@ app.include_router(chat_router)
 app.include_router(watchlist_router)
 app.include_router(market_router)
 app.include_router(research_router)
+app.include_router(broker_router)
+app.include_router(broker_deploy_router)
+app.include_router(notifications_router)
+app.include_router(performance_router)
+
+
+@app.on_event("startup")
+def _start_scheduler():
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def _stop_scheduler():
+    stop_scheduler()
 
 
 @app.get("/health")

@@ -11,9 +11,11 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    last_notifications_seen_at = Column(DateTime, nullable=True)
 
     portfolios = relationship("Portfolio", back_populates="owner", cascade="all, delete-orphan")
     watchlists = relationship("Watchlist", back_populates="owner", cascade="all, delete-orphan")
+    broker_connection = relationship("BrokerConnection", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 
 class Portfolio(Base):
@@ -40,12 +42,21 @@ class Strategy(Base):
     buy_conditions = Column(JSON, nullable=False, default=lambda: {"logic": "AND", "rules": []})
     sell_conditions = Column(JSON, nullable=False, default=lambda: {"logic": "AND", "rules": []})
     position_size_pct = Column(Float, nullable=False, default=10.0)
+    asset_type = Column(String, nullable=False, default="equity")  # equity | option
+    option_type = Column(String, nullable=True)  # call | put
+    strike_distance_pct = Column(Float, nullable=True)  # positive = OTM, negative = ITM
+    dte_min = Column(Integer, nullable=True)
+    dte_max = Column(Integer, nullable=True)
+    take_profit_pct = Column(Float, nullable=True)
+    stop_loss_pct = Column(Float, nullable=True)
+    max_days_held = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     portfolio_id = Column(Integer, ForeignKey("portfolios.id"), nullable=False)
 
     portfolio = relationship("Portfolio", back_populates="strategies")
     backtest_results = relationship("BacktestResult", back_populates="strategy", cascade="all, delete-orphan")
     paper_trades = relationship("PaperTrade", back_populates="strategy", cascade="all, delete-orphan")
+    broker_deployment = relationship("BrokerDeployment", back_populates="strategy", uselist=False, cascade="all, delete-orphan")
 
 
 class PriceData(Base):
@@ -101,6 +112,77 @@ class WatchlistAsset(Base):
     watchlist = relationship("Watchlist", back_populates="assets")
 
 
+class BrokerConnection(Base):
+    __tablename__ = "broker_connections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    broker = Column(String, nullable=False, default="alpaca")
+    api_key_encrypted = Column(Text, nullable=False)
+    api_secret_encrypted = Column(Text, nullable=False)
+    is_paper = Column(Boolean, nullable=False, default=True)
+    alpaca_account_id = Column(String, nullable=True)
+    alpaca_account_number = Column(String, nullable=True)
+    connected_at = Column(DateTime, default=datetime.utcnow)
+    kill_switch_active = Column(Boolean, nullable=False, default=False)
+    kill_switch_activated_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="broker_connection")
+
+
+class BrokerDeployment(Base):
+    __tablename__ = "broker_deployments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False, unique=True)
+    status = Column(String, nullable=False, default="active")  # active | stopped | error
+    started_at = Column(Date, nullable=False)
+    last_tick_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    strategy = relationship("Strategy", back_populates="broker_deployment")
+    orders = relationship("BrokerOrder", back_populates="deployment", cascade="all, delete-orphan")
+    events = relationship("BrokerEvent", back_populates="deployment", cascade="all, delete-orphan")
+
+
+class BrokerOrder(Base):
+    __tablename__ = "broker_orders"
+    __table_args__ = (UniqueConstraint("deployment_id", "trade_date", "side", name="uq_broker_order_dedupe"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    deployment_id = Column(Integer, ForeignKey("broker_deployments.id"), nullable=False)
+    alpaca_order_id = Column(String, nullable=True)
+    side = Column(String, nullable=False)  # BUY | SELL
+    qty = Column(Float, nullable=False)
+    order_type = Column(String, nullable=False, default="market")
+    status = Column(String, nullable=True)
+    filled_qty = Column(Float, nullable=True)
+    filled_avg_price = Column(Float, nullable=True)
+    trade_date = Column(Date, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    contract_symbol = Column(String, nullable=True)
+    strike = Column(Float, nullable=True)
+    expiration = Column(Date, nullable=True)
+    option_type = Column(String, nullable=True)  # call | put
+
+    deployment = relationship("BrokerDeployment", back_populates="orders")
+
+
+class BrokerEvent(Base):
+    __tablename__ = "broker_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deployment_id = Column(Integer, ForeignKey("broker_deployments.id"), nullable=False)
+    date = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    deployment = relationship("BrokerDeployment", back_populates="events")
+
+
 class BacktestResult(Base):
     __tablename__ = "backtest_results"
 
@@ -117,6 +199,8 @@ class BacktestResult(Base):
     win_rate = Column(Float)
     num_trades = Column(Integer)
     equity_curve = Column(JSON)
+    benchmark_equity_curve = Column(JSON)
+    benchmark_return_pct = Column(Float)
     trades = Column(JSON)
     events = Column(JSON)
     events_truncated = Column(Boolean, default=False)

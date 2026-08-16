@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 import pandas as pd
 import yfinance as yf
 from sqlalchemy.orm import Session
@@ -15,7 +15,15 @@ def get_price_data(ticker: str, start: date, end: date, db: Session) -> pd.DataF
         .order_by(PriceData.date)
         .all()
     )
-    if cached:
+    # Cache is only good enough to skip a refetch if it actually spans the requested range —
+    # a ticker cached from an earlier session (with a narrower range) otherwise silently
+    # serves a truncated window forever, on either the start or the end side.
+    stale = (
+        not cached
+        or cached[-1].date < end - timedelta(days=4)
+        or cached[0].date > start + timedelta(days=4)
+    )
+    if cached and not stale:
         return pd.DataFrame(
             [{"date": r.date, "open": r.open, "high": r.high,
               "low": r.low, "close": r.close, "volume": r.volume}

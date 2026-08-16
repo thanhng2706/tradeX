@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { researchApi, ScreenerResult } from '../api/research'
 
@@ -67,6 +67,22 @@ function peColor(pe: number | null): string {
   return pe > 50 ? 'text-red-400' : 'text-emerald-400'
 }
 
+type SortKey = 'price' | 'market_cap' | 'pe_ratio' | 'revenue'
+
+function SortHeader({ label, sortKey, active, dir, onClick }: {
+  label: string; sortKey: SortKey; active: boolean; dir: 'desc' | 'asc' | null; onClick: (key: SortKey) => void
+}) {
+  return (
+    <button onClick={() => onClick(sortKey)}
+      className={`flex items-center justify-end gap-1 ml-auto transition-colors ${active ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+      {label}
+      <span className={`text-[10px] ${active ? 'text-blue-400' : 'text-gray-700'}`}>
+        {active ? (dir === 'desc' ? '▼' : '▲') : '▼'}
+      </span>
+    </button>
+  )
+}
+
 function RangeField({ label, min, max, onMin, onMax, unit }: {
   label: string; min: string; max: string; onMin: (v: string) => void; onMax: (v: string) => void; unit?: string
 }) {
@@ -85,6 +101,13 @@ function RangeField({ label, min, max, onMin, onMax, unit }: {
   )
 }
 
+const SUGGESTIONS = [
+  'Profitable EV companies with PE under 30',
+  'Large-cap tech with strong free cash flow',
+  'Dividend-paying ETFs',
+  'Leveraged plays under $50B market cap',
+]
+
 export default function ScreenerPage() {
   const navigate = useNavigate()
   const [categories, setCategories] = useState<string[]>([])
@@ -101,6 +124,33 @@ export default function ScreenerPage() {
   const [aiQuery, setAiQuery] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
 
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'desc' | 'asc' | null>(null)
+
+  function toggleSort(key: SortKey) {
+    if (sortKey !== key) {
+      setSortKey(key)
+      setSortDir('desc')
+    } else if (sortDir === 'desc') {
+      setSortDir('asc')
+    } else {
+      setSortKey(null)
+      setSortDir(null)
+    }
+  }
+
+  const displayResults = useMemo(() => {
+    if (!sortKey || !sortDir) return results
+    const withVal = results.filter((r) => r[sortKey] != null)
+    const withoutVal = results.filter((r) => r[sortKey] == null)
+    withVal.sort((a, b) => {
+      const av = a[sortKey] as number
+      const bv = b[sortKey] as number
+      return sortDir === 'desc' ? bv - av : av - bv
+    })
+    return [...withVal, ...withoutVal]
+  }, [results, sortKey, sortDir])
+
   useEffect(() => {
     researchApi.getCategories().then(setCategories)
   }, [])
@@ -115,6 +165,8 @@ export default function ScreenerPage() {
     setAskedQuery('')
     setResults([])
     setRan(false)
+    setSortKey(null)
+    setSortDir(null)
   }
 
   async function handleRunScreener(e: React.FormEvent) {
@@ -137,15 +189,14 @@ export default function ScreenerPage() {
     }
   }
 
-  async function handleAiScreen(e: React.FormEvent) {
-    e.preventDefault()
-    if (!aiQuery.trim()) return
+  async function runAiQuery(query: string) {
+    if (!query.trim()) return
     setAiLoading(true)
     setRan(true)
     try {
-      const { filters, results: data } = await researchApi.runAiScreener(aiQuery.trim())
+      const { filters, results: data } = await researchApi.runAiScreener(query.trim())
       setResults(data)
-      setAskedQuery(aiQuery.trim())
+      setAskedQuery(query.trim())
       setCategory(filters.category ?? '')
       setMinMarketCap(filters.min_market_cap ? String(filters.min_market_cap / 1e9) : '')
       setMaxMarketCap(filters.max_market_cap ? String(filters.max_market_cap / 1e9) : '')
@@ -154,6 +205,16 @@ export default function ScreenerPage() {
     } finally {
       setAiLoading(false)
     }
+  }
+
+  async function handleAiScreen(e: React.FormEvent) {
+    e.preventDefault()
+    await runAiQuery(aiQuery)
+  }
+
+  function handleSuggestion(query: string) {
+    setAiQuery(query)
+    runAiQuery(query)
   }
 
   const busy = loading || aiLoading
@@ -175,11 +236,16 @@ export default function ScreenerPage() {
         <form onSubmit={handleRunScreener} className="flex flex-wrap items-end gap-6 mb-4">
           <div>
             <label className="block text-xs text-gray-500 mb-1.5">Category</label>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}
-              className="bg-transparent border border-gray-800 rounded-lg px-3 py-2 text-base text-white focus:outline-none focus:border-blue-600">
-              <option value="" className="bg-gray-900">All</option>
-              {categories.map((c) => <option key={c} value={c} className="bg-gray-900">{c}</option>)}
-            </select>
+            <div className="relative">
+              <select value={category} onChange={(e) => setCategory(e.target.value)}
+                className="appearance-none bg-transparent border border-gray-800 rounded-lg pl-3 pr-8 py-2 text-base text-white focus:outline-none focus:border-blue-600 cursor-pointer">
+                <option value="" className="bg-gray-900">All Categories</option>
+                {categories.map((c) => <option key={c} value={c} className="bg-gray-900">{c}</option>)}
+              </select>
+              <svg className="w-3.5 h-3.5 text-gray-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
           </div>
 
           <RangeField label="Market cap" min={minMarketCap} max={maxMarketCap} onMin={setMinMarketCap} onMax={setMaxMarketCap} unit="$B" />
@@ -192,21 +258,50 @@ export default function ScreenerPage() {
         </form>
 
         <form onSubmit={handleAiScreen} className="flex items-center gap-2 pt-4 border-t border-gray-800/60">
-          <span className="text-blue-400 shrink-0"><SparkleIcon /></span>
-          <input
-            value={aiQuery}
-            onChange={(e) => setAiQuery(e.target.value)}
-            placeholder="Ask Aria — e.g. profitable EV companies with PE under 30"
-            className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-600 focus:outline-none"
-          />
+          <div className="flex-1 flex items-center gap-2 bg-gray-950 border border-gray-700 focus-within:border-blue-600 rounded-lg px-3.5 py-2.5 transition-colors">
+            <span className="text-blue-400 shrink-0"><SparkleIcon /></span>
+            <input
+              value={aiQuery}
+              onChange={(e) => setAiQuery(e.target.value)}
+              placeholder="Ask Aria — e.g. profitable EV companies with PE under 30"
+              className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
+            />
+          </div>
           {aiQuery.trim() && (
             <button type="submit" disabled={busy}
-              className="text-blue-400 hover:text-blue-300 disabled:opacity-40 text-xs font-medium shrink-0">
+              className="text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors shrink-0">
               {aiLoading ? 'Asking…' : 'Ask →'}
             </button>
           )}
         </form>
       </div>
+
+      {!ran && (
+        <div className="mt-4 bg-gray-900 border border-gray-800 rounded-2xl py-16 px-6 flex flex-col items-center text-center">
+          <div className="w-12 h-12 rounded-xl bg-blue-950/50 text-blue-400 flex items-center justify-center mb-4">
+            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m21 21-4.3-4.3" strokeLinecap="round" />
+            </svg>
+          </div>
+          <h3 className="text-white font-bold text-sm mb-1.5">Run a screen to see results</h3>
+          <p className="text-gray-500 text-xs mb-6 max-w-sm">
+            Set filters above, or try one of these with Aria:
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => handleSuggestion(s)}
+                className="text-xs text-gray-300 bg-gray-800 hover:bg-gray-700 border border-gray-700/60 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <span className="text-blue-400"><SparkleIcon className="w-3 h-3" /></span>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {ran && (
         <div className="mt-4 bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
@@ -224,12 +319,12 @@ export default function ScreenerPage() {
             <>
               <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 px-5 py-3 text-gray-500 text-xs uppercase tracking-wide">
                 <span>Symbol</span>
-                <span className="text-right">Price</span>
-                <span className="text-right">Market Cap</span>
-                <span className="text-right">P/E</span>
-                <span className="text-right">Revenue</span>
+                <SortHeader label="Price" sortKey="price" active={sortKey === 'price'} dir={sortKey === 'price' ? sortDir : null} onClick={toggleSort} />
+                <SortHeader label="Market Cap" sortKey="market_cap" active={sortKey === 'market_cap'} dir={sortKey === 'market_cap' ? sortDir : null} onClick={toggleSort} />
+                <SortHeader label="P/E" sortKey="pe_ratio" active={sortKey === 'pe_ratio'} dir={sortKey === 'pe_ratio' ? sortDir : null} onClick={toggleSort} />
+                <SortHeader label="Revenue" sortKey="revenue" active={sortKey === 'revenue'} dir={sortKey === 'revenue' ? sortDir : null} onClick={toggleSort} />
               </div>
-              {results.map((r) => {
+              {displayResults.map((r) => {
                 const cur = currencySymbol(r.currency)
                 return (
                   <div key={r.symbol} onClick={() => navigate(`/stock/${r.symbol}`)}
@@ -244,7 +339,7 @@ export default function ScreenerPage() {
                     <span className="text-right text-white font-medium">{r.price != null ? `${cur}${r.price.toFixed(2)}` : 'N/A'}</span>
                     <span className="text-right text-gray-300">{formatCompact(r.market_cap, cur)}</span>
                     <span className={`text-right font-medium ${peColor(r.pe_ratio)}`}>{r.pe_ratio != null ? r.pe_ratio.toFixed(1) : 'N/A'}</span>
-                    <span className="text-right text-gray-300">{formatCompact(r.revenue, cur)}</span>
+                    <span className="text-right text-gray-300">{formatCompact(r.revenue, '$')}</span>
                   </div>
                 )
               })}

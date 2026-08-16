@@ -2,6 +2,13 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { researchApi } from '../api/research'
 
+const SUGGESTIONS = [
+  { topic: 'Compare NVDA and AMD in the AI chip race', symbol: 'NVDA' },
+  { topic: "Is Tesla's robotaxi bet actually working?", symbol: 'TSLA' },
+  { topic: 'How exposed is Apple to a China slowdown?', symbol: 'AAPL' },
+  { topic: 'The bull and bear case for the S&P 500 right now', symbol: 'SPY' },
+]
+
 export default function DeepDivePage() {
   const [topic, setTopic] = useState('')
   const [symbol, setSymbol] = useState('')
@@ -9,20 +16,30 @@ export default function DeepDivePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!topic.trim()) return
+  async function runDeepDive(t: string, sym?: string) {
+    if (!t.trim()) return
     setLoading(true)
     setError('')
     setReport('')
     try {
-      const text = await researchApi.runDeepDive(topic.trim(), symbol.trim() || undefined)
+      const text = await researchApi.runDeepDive(t.trim(), sym?.trim() || undefined)
       setReport(text)
     } catch {
       setError('Could not generate the deep dive right now.')
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    await runDeepDive(topic, symbol)
+  }
+
+  function handleSuggestion(t: string, sym: string) {
+    setTopic(t)
+    setSymbol(sym)
+    runDeepDive(t, sym)
   }
 
   return (
@@ -36,13 +53,13 @@ export default function DeepDivePage() {
             <label className="block text-xs text-gray-500 mb-1.5">Topic</label>
             <input value={topic} onChange={(e) => setTopic(e.target.value)}
               placeholder="e.g. Compare NVDA and AMD in the AI chip race"
-              className="w-full bg-transparent border border-gray-800 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-600" />
+              className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 transition-colors" />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1.5">Symbol <span className="text-gray-700">(optional)</span></label>
             <input value={symbol} onChange={(e) => setSymbol(e.target.value)}
               placeholder="NVDA"
-              className="w-28 bg-transparent border border-gray-800 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-600 uppercase" />
+              className="w-28 bg-gray-950 border border-gray-700 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-600 uppercase transition-colors" />
           </div>
           <button type="submit" disabled={loading || !topic.trim()}
             className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
@@ -50,6 +67,32 @@ export default function DeepDivePage() {
           </button>
         </form>
       </div>
+
+      {!report && !loading && !error && (
+        <div className="mt-4 bg-gray-900 border border-gray-800 rounded-2xl py-16 px-6 flex flex-col items-center text-center">
+          <div className="w-12 h-12 rounded-xl bg-blue-950/50 text-blue-400 flex items-center justify-center mb-4">
+            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M14 2v6h6M9 13h6M9 17h6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <h3 className="text-white font-bold text-sm mb-1.5">Run a deep dive to see the report</h3>
+          <p className="text-gray-500 text-xs mb-6 max-w-sm">
+            Enter a topic above, or try one of these:
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s.topic}
+                onClick={() => handleSuggestion(s.topic, s.symbol)}
+                className="text-xs text-gray-300 bg-gray-800 hover:bg-gray-700 border border-gray-700/60 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                {s.topic}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="mt-4 bg-gray-900 border border-gray-800 rounded-2xl p-8 text-center text-gray-500 text-sm">

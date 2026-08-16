@@ -14,6 +14,9 @@ export interface ConditionSet {
   rules: Rule[]
 }
 
+export type AssetType = 'equity' | 'option'
+export type OptionType = 'call' | 'put'
+
 export interface Strategy {
   id: number
   name: string
@@ -22,6 +25,14 @@ export interface Strategy {
   buy_conditions: ConditionSet
   sell_conditions: ConditionSet
   position_size_pct: number
+  asset_type: AssetType
+  option_type: OptionType | null
+  strike_distance_pct: number | null
+  dte_min: number | null
+  dte_max: number | null
+  take_profit_pct: number | null
+  stop_loss_pct: number | null
+  max_days_held: number | null
   created_at: string
   portfolio_id: number
 }
@@ -33,6 +44,14 @@ export interface StrategyPayload {
   buy_conditions: ConditionSet
   sell_conditions: ConditionSet
   position_size_pct: number
+  asset_type?: AssetType
+  option_type?: OptionType | null
+  strike_distance_pct?: number | null
+  dte_min?: number | null
+  dte_max?: number | null
+  take_profit_pct?: number | null
+  stop_loss_pct?: number | null
+  max_days_held?: number | null
 }
 
 export const strategiesApi = {

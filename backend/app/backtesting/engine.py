@@ -1,3 +1,4 @@
+from datetime import date
 import numpy as np
 import pandas as pd
 from typing import Any
@@ -184,6 +185,49 @@ def _eval_rules(
     return all(results) if logic == "AND" else any(results)
 
 
+def evaluate_latest_signal(buy_conditions: dict, sell_conditions: dict, df: pd.DataFrame) -> dict:
+    """Evaluate buy/sell rules for only the most recent row of df.
+
+    Unlike run_backtest, this doesn't simulate cash/position bookkeeping across the
+    whole window — it's for live scheduler ticks, where "am I in a position" should
+    come from the real broker, not a replayed history. df must include enough
+    lookback before the last row for indicators (e.g. SMA(200)) to be non-NaN there.
+    """
+    buy_rules = buy_conditions.get("rules", [])
+    sell_rules = sell_conditions.get("rules", [])
+    buy_logic = buy_conditions.get("logic", "AND")
+    sell_logic = sell_conditions.get("logic", "AND")
+
+    ind_series: dict[str, pd.Series] = {}
+    for rule in buy_rules + sell_rules:
+        for ind, params in [
+            (rule["indicator"], rule.get("params", {})),
+            (rule.get("right_indicator"), rule.get("right_params") or {}),
+        ]:
+            if ind and ind not in ("PRICE", "VOLUME"):
+                key = _ind_key(ind, params)
+                if key not in ind_series:
+                    ind_series[key] = _compute_series(ind, params, df)
+
+    i = len(df) - 1
+    close = float(df["close"].iloc[i])
+    volume = float(df["volume"].iloc[i])
+    ind_row = {k: float(s.iloc[i]) for k, s in ind_series.items()}
+    ind_row_prev = {k: float(s.iloc[i - 1]) for k, s in ind_series.items()} if i > 0 else None
+    prev_close = float(df["close"].iloc[i - 1]) if i > 0 else None
+    prev_volume = float(df["volume"].iloc[i - 1]) if i > 0 else None
+
+    buy_signal = _eval_rules(buy_rules, buy_logic, ind_row, ind_row_prev, close, volume, prev_close, prev_volume)
+    sell_signal = _eval_rules(sell_rules, sell_logic, ind_row, ind_row_prev, close, volume, prev_close, prev_volume)
+
+    return {
+        "date": str(df["date"].iloc[i]),
+        "close": close,
+        "buy_signal": buy_signal,
+        "sell_signal": sell_signal,
+    }
+
+
 # ── Main backtest ─────────────────────────────────────────────────────────────
 
 def run_backtest(
@@ -192,7 +236,20 @@ def run_backtest(
     df: pd.DataFrame,
     starting_balance: float,
     position_size_pct: float,
+    sim_start_date: date | None = None,
+    close_at_end: bool = True,
 ) -> dict[str, Any]:
+    """`sim_start_date` lets a caller pass extra history BEFORE the date they actually
+    care about simulating, so indicators with a long lookback (RSI(40), SMA(200), ...)
+    are already warmed up by the time trading starts — without that buffer, the first
+    N rows of any window are silently NaN and can never trigger a signal. Rows before
+    `sim_start_date` still feed the indicator series and rising-edge tracking, they just
+    never execute trades or get recorded into events/equity_curve. Backtesting and the
+    Optimizer never pass this, so their behavior is completely unchanged.
+
+    `close_at_end=False` skips the forced end-of-window liquidation below — appropriate
+    for a caller (paper trading) where the last row is just "today," not an actual
+    ending, so a still-open position should be reported as open, not force-sold."""
     buy_rules = buy_conditions.get("rules", [])
     sell_rules = sell_conditions.get("rules", [])
     buy_logic = buy_conditions.get("logic", "AND")
@@ -216,6 +273,8 @@ def run_backtest(
     entry_price = 0.0
     wins = losses = 0
     equity_curve: list[dict] = []
+    benchmark_equity_curve: list[dict] = []
+    bh_shares: float | None = None  # buy-and-hold shares, sized once on the first simulated row
     trades: list[dict] = []
     events: list[dict] = []
     prev_buy_signal = False
@@ -234,6 +293,13 @@ def run_backtest(
 
         buy_signal = _eval_rules(buy_rules, buy_logic, ind_row, ind_row_prev, close, volume, prev_close, prev_volume)
         sell_signal = _eval_rules(sell_rules, sell_logic, ind_row, ind_row_prev, close, volume, prev_close, prev_volume)
+
+        if sim_start_date is not None and row["date"] < sim_start_date:
+            # Warmup-only row: keeps rising-edge tracking continuous across the boundary,
+            # but no trade, event, or equity_curve point gets recorded for it.
+            prev_buy_signal = buy_signal
+            prev_sell_signal = sell_signal
+            continue
 
         # Signal/guard events only fire on the rising edge (newly true this bar),
         # otherwise a sticky condition (e.g. "RSI < 30") would emit one event per bar.
@@ -282,8 +348,13 @@ def run_backtest(
 
         equity_curve.append({"date": date_str, "value": round(cash + shares * close, 2)})
 
-    if in_position and len(df) > 0:
-        final_close = float(df["close"].iloc[-1])
+        if bh_shares is None:
+            bh_shares = starting_balance / close
+        benchmark_equity_curve.append({"date": date_str, "value": round(bh_shares * close, 2)})
+
+    final_close = float(df["close"].iloc[-1]) if len(df) > 0 else 0.0
+
+    if in_position and len(df) > 0 and close_at_end:
         final_date = str(df["date"].iloc[-1])
         proceeds = shares * final_close
         pnl = proceeds - shares * entry_price
@@ -296,18 +367,25 @@ def run_backtest(
         events.append({"date": final_date, "type": "ORDER_FILLED",
                        "message": f"Position closed at end of backtest: sold {shares:.4f} shares @ "
                                   f"${final_close:.2f} ({'+' if pnl >= 0 else ''}${pnl:,.2f} P&L)"})
+        shares = 0.0
         if equity_curve:
             equity_curve[-1]["value"] = round(cash, 2)
+    # else (close_at_end=False and still in position): leave it open — the equity_curve's
+    # last point was already mark-to-market from the main loop, nothing to adjust here.
 
     MAX_EVENTS = 500
     events_truncated = len(events) > MAX_EVENTS
     if events_truncated:
         events = events[-MAX_EVENTS:]
 
-    final_balance = round(cash, 2)
-    total_return_pct = round((cash - starting_balance) / starting_balance * 100, 2)
-    years = len(df) / 252
-    annualized_return_pct = round(((cash / starting_balance) ** (1 / years) - 1) * 100, 2) if years > 0 and cash > 0 else 0.0
+    # Mark-to-market: equals `cash` whenever close_at_end already liquidated any open
+    # position (shares == 0 by then), and correctly includes a still-open position's
+    # current worth when close_at_end=False left one open.
+    account_value = cash + shares * final_close
+    final_balance = round(account_value, 2)
+    total_return_pct = round((account_value - starting_balance) / starting_balance * 100, 2)
+    years = len(equity_curve) / 252
+    annualized_return_pct = round(((account_value / starting_balance) ** (1 / years) - 1) * 100, 2) if years > 0 and account_value > 0 else 0.0
 
     values = pd.Series([e["value"] for e in equity_curve])
     daily_ret = values.pct_change().dropna()
@@ -316,6 +394,11 @@ def run_backtest(
 
     num_trades = wins + losses
     win_rate = round(wins / num_trades * 100, 2) if num_trades > 0 else 0.0
+
+    benchmark_return_pct = (
+        round((benchmark_equity_curve[-1]["value"] - starting_balance) / starting_balance * 100, 2)
+        if benchmark_equity_curve else 0.0
+    )
 
     if len(df) > 0:
         events.append({"date": str(df["date"].iloc[-1]), "type": "BACKTEST_COMPLETE",
@@ -331,6 +414,8 @@ def run_backtest(
         "win_rate": win_rate,
         "num_trades": num_trades,
         "equity_curve": equity_curve,
+        "benchmark_equity_curve": benchmark_equity_curve,
+        "benchmark_return_pct": benchmark_return_pct,
         "trades": trades,
         "events": events,
         "events_truncated": events_truncated,

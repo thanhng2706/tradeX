@@ -91,7 +91,14 @@ def run_optimizer(
     position_size_pct: float,
     df: pd.DataFrame,
     starting_balance: float,
+    validation_df: pd.DataFrame | None = None,
 ) -> list[dict]:
+    """`df` is the training window — the genetic search evolves and scores every
+    candidate against this data ONLY. `validation_df`, if given, is a separate,
+    held-out date range the search never sees; the final top candidates each get
+    one extra backtest against it purely for reporting, so a result that overfit
+    to `df`'s coincidences is visible (great training numbers, poor validation ones)
+    instead of looking uniformly convincing."""
     specs = _get_specs(buy_conditions, sell_conditions, position_size_pct)
     if not specs:
         return []
@@ -133,7 +140,7 @@ def run_optimizer(
         except Exception:
             continue
 
-        top_results.append({
+        result = {
             "buy_conditions": buy,
             "sell_conditions": sell,
             "position_size_pct": round(pos_size, 1),
@@ -144,7 +151,21 @@ def run_optimizer(
             "win_rate": metrics["win_rate"],
             "num_trades": metrics["num_trades"],
             "final_balance": metrics["final_balance"],
-        })
+        }
+
+        if validation_df is not None:
+            try:
+                val_metrics = run_backtest(buy, sell, validation_df, starting_balance, pos_size)
+                result["validation_total_return_pct"] = val_metrics["total_return_pct"]
+                result["validation_annualized_return_pct"] = val_metrics["annualized_return_pct"]
+                result["validation_sharpe_ratio"] = val_metrics["sharpe_ratio"]
+                result["validation_max_drawdown_pct"] = val_metrics["max_drawdown_pct"]
+                result["validation_win_rate"] = val_metrics["win_rate"]
+                result["validation_num_trades"] = val_metrics["num_trades"]
+            except Exception:
+                pass
+
+        top_results.append(result)
         if len(top_results) >= 5:
             break
 
